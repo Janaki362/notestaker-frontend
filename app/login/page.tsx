@@ -1,6 +1,32 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { signInWithPopup } from "firebase/auth";
+import { auth, googleProvider } from "../firebase";
 
 export default function LoginPage() {
+  const router = useRouter();
+
+  const handleGoogleLogin = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          name: result.user.displayName,
+          email: result.user.email,
+        })
+      );
+
+      router.push("/upload");
+    } catch (error) {
+      console.error("Login failed:", error);
+      alert("Google login failed. Please try again.");
+    }
+  };
+
   return (
     <main
       style={{
@@ -48,6 +74,7 @@ export default function LoginPage() {
         </p>
 
         <button
+          onClick={handleGoogleLogin}
           style={{
             width: "100%",
             display: "flex",

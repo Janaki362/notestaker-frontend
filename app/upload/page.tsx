@@ -6,40 +6,68 @@ import { useRef, useState } from "react";
 
 export default function UploadPage() {
   const [fileName, setFileName] = useState("");
-  const [progress, setProgress] = useState(0);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+
     if (file) {
+      setSelectedFile(file);
       setFileName(file.name);
-      setProgress(0);
+      setError("");
     }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
+
     const file = e.dataTransfer.files?.[0];
+
     if (file) {
+      setSelectedFile(file);
       setFileName(file.name);
-      setProgress(0);
+      setError("");
     }
   };
 
-  const handleUpload = () => {
-    if (!fileName) return;
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      setError("Please select a file first.");
+      return;
+    }
 
-    let value = 0;
-    const timer = setInterval(() => {
-      value += 10;
-      setProgress(value);
+    try {
+      setLoading(true);
+      setError("");
 
-      if (value >= 100) {
-        clearInterval(timer);
-        router.push("/results");
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const res = await fetch("http://localhost:8080/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error("Upload failed");
       }
-    }, 300);
+
+      const data = await res.json();
+
+      localStorage.setItem("aiResults", JSON.stringify(data));
+
+      router.push("/results");
+    } catch (err) {
+      console.error(err);
+      setError("Something went wrong while uploading. Please check backend API.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -82,12 +110,10 @@ export default function UploadPage() {
           textAlign: "center",
         }}
       >
-        <h1 style={{ marginBottom: "8px" }}>AI Study Platform</h1>
-        <h2 style={{ marginBottom: "10px", fontSize: "22px" }}>
-          Upload Document
-        </h2>
-        <p style={{ color: "#555", marginBottom: "24px" }}>
-          Upload your file to generate summaries, flashcards, and quizzes.
+        <h1>AI Study Platform</h1>
+        <h2>Upload Document</h2>
+        <p style={{ color: "#555" }}>
+          Upload your PDF to generate summaries, flashcards, and quizzes.
         </p>
 
         <div
@@ -101,7 +127,7 @@ export default function UploadPage() {
             cursor: "pointer",
           }}
         >
-          <p style={{ marginBottom: "12px" }}>Drag & Drop your file here</p>
+          <p>Drag & Drop your file here</p>
 
           <button
             type="button"
@@ -120,59 +146,35 @@ export default function UploadPage() {
 
           <input
             ref={fileInputRef}
-            id="fileUpload"
             type="file"
+            accept="application/pdf"
             onChange={handleFileChange}
             style={{ display: "none" }}
           />
         </div>
 
         {fileName && (
-          <p style={{ marginTop: "10px", color: "green" }}>
-            Selected File: {fileName}
-          </p>
+          <p style={{ color: "green" }}>Selected File: {fileName}</p>
         )}
 
-        {progress > 0 && (
-          <>
-            <div
-              style={{
-                width: "100%",
-                maxWidth: "320px",
-                height: "18px",
-                backgroundColor: "#ddd",
-                borderRadius: "10px",
-                margin: "20px auto 10px",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${progress}%`,
-                  height: "100%",
-                  backgroundColor: "green",
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-
-            <p>{progress}% uploaded</p>
-          </>
+        {error && (
+          <p style={{ color: "red", marginTop: "10px" }}>{error}</p>
         )}
 
         <button
           onClick={handleUpload}
+          disabled={loading}
           style={{
             marginTop: "20px",
             padding: "12px 24px",
-            backgroundColor: "black",
+            backgroundColor: loading ? "gray" : "black",
             color: "white",
             borderRadius: "8px",
             border: "none",
-            cursor: "pointer",
+            cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          Upload
+          {loading ? "Processing..." : "Upload"}
         </button>
       </div>
     </main>
