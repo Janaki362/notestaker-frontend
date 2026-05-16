@@ -1,16 +1,33 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "../firebase";
 
 export default function UploadPage() {
   const router = useRouter();
+  const pathname = usePathname(); // Used to highlight active sidebar items
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [userName, setUserName] = useState("User");
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserName(user.displayName || user.email || "User");
+      } else {
+        router.push("/login");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -28,9 +45,22 @@ export default function UploadPage() {
     const file = e.dataTransfer.files?.[0];
 
     if (file) {
+      if (file.type !== "application/pdf") {
+        setError("Only PDF files are currently supported.");
+        return;
+      }
       setSelectedFile(file);
       setFileName(file.name);
       setError("");
+    }
+  };
+
+  const handleRemoveFile = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevents clicking the dropzone when removing the file
+    setSelectedFile(null);
+    setFileName("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
   };
 
@@ -56,15 +86,27 @@ export default function UploadPage() {
       );
 
       if (!res.ok) {
-  setError("Upload failed. Please try again or check the file.");
-  setLoading(false);
-  return;
-}
+        setError("Upload failed. Please try again or check the file.");
+        setLoading(false);
+        return;
+      }
 
       const data = await res.json();
+      
+      // 1. Save the AI Results
       localStorage.setItem("aiResults", JSON.stringify(data));
+      
+      // 2. NEW: Save the File Metadata so the Results page knows the name!
+      const fileMeta = {
+        name: selectedFile.name,
+        size: (selectedFile.size / (1024 * 1024)).toFixed(2) + " MB",
+        uploadDate: new Date().toLocaleDateString(),
+      };
+      localStorage.setItem("uploadedFile", JSON.stringify(fileMeta));
 
+      // 3. Redirect to results
       router.push("/results");
+      
     } catch (err) {
       console.error(err);
       setError("Something went wrong while uploading. Please try again.");
@@ -72,6 +114,14 @@ export default function UploadPage() {
       setLoading(false);
     }
   };
+
+  const navItems = [
+    { name: "Dashboard", path: "/dashboard", icon: "▦" }, // View all past PDFs
+    { name: "Folders", path: "/folders", icon: "📁" },     // Organize past PDFs
+    { name: "Settings", path: "/settings", icon: "⚙" },    // Account management
+  ];
+
+  const isUploadDisabled = loading || !selectedFile;
 
   return (
     <main
@@ -92,6 +142,7 @@ export default function UploadPage() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
+          zIndex: 10, // Ensure sidebar stays on top
         }}
       >
         <div>
@@ -119,16 +170,39 @@ export default function UploadPage() {
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: "16px",
-              color: "#cbd5e1",
-              fontSize: "14px",
+              gap: "8px", // Reduced gap since padding handles spacing now
             }}
           >
-            <span>▦ Dashboard</span>
-            <span>📝 Notes</span>
-            <span>▱ Flashcards</span>
-            <span>▣ Quizzes</span>
-            <span>📁 Folders</span>
+            {navItems.map((item) => {
+              const isActive = pathname === item.path;
+              return (
+                <Link
+                  key={item.name}
+                  href={item.path}
+                  style={{ textDecoration: "none" }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      padding: "10px",
+                      borderRadius: "8px",
+                      color: isActive ? "white" : "#cbd5e1",
+                      backgroundColor: isActive
+                        ? "rgba(255,255,255,0.1)"
+                        : "transparent",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      transition: "background-color 0.2s",
+                    }}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.name}</span>
+                  </div>
+                </Link>
+              );
+            })}
           </nav>
         </div>
 
@@ -141,7 +215,7 @@ export default function UploadPage() {
           }}
         >
           ⚙ Settings
-          <p style={{ marginTop: "14px" }}>👤 Janaki</p>
+          <p style={{ marginTop: "14px" }}>👤 {userName}</p>
         </div>
       </aside>
 
@@ -157,7 +231,6 @@ export default function UploadPage() {
           Create New Workspace
         </h1>
 
-        {/* Steps */}
         <div
           style={{
             display: "flex",
@@ -183,7 +256,6 @@ export default function UploadPage() {
           </div>
         </div>
 
-        {/* Upload Card */}
         <div
           style={{
             maxWidth: "620px",
@@ -222,6 +294,7 @@ export default function UploadPage() {
               backgroundColor: "rgba(17, 24, 39, 0.85)",
               cursor: "pointer",
               marginBottom: "22px",
+              transition: "border-color 0.2s ease",
             }}
           >
             <div
@@ -241,11 +314,9 @@ export default function UploadPage() {
             </div>
 
             <h3 style={{ margin: "0 0 8px" }}>Upload PDF</h3>
-
             <p style={{ color: "#9ca3af", fontSize: "14px" }}>
               Drag and drop or browse files
             </p>
-
             <p style={{ color: "#6b7280", fontSize: "12px" }}>
               Maximum 50MB per file
             </p>
@@ -260,9 +331,32 @@ export default function UploadPage() {
           </div>
 
           {fileName && (
-            <p style={{ color: "#86efac", marginBottom: "16px" }}>
-              Selected File: {fileName}
-            </p>
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              gap: "8px", 
+              marginBottom: "16px" 
+            }}>
+              <p style={{ color: "#86efac", margin: 0 }}>
+                Selected File: {fileName}
+              </p>
+              <button 
+                onClick={handleRemoveFile}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#ef4444",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "bold",
+                  padding: "4px"
+                }}
+                title="Remove file"
+              >
+                ✕
+              </button>
+            </div>
           )}
 
           {error && (
@@ -273,19 +367,21 @@ export default function UploadPage() {
 
           <button
             onClick={handleUpload}
-            disabled={loading}
+            disabled={isUploadDisabled}
             style={{
               width: "100%",
               padding: "14px",
               borderRadius: "12px",
               border: "none",
-              background: loading
-                ? "#6b7280"
+              background: isUploadDisabled
+                ? "#374151" // Disabled color
                 : "linear-gradient(to right, #7c3aed, #9333ea)",
-              color: "white",
+              color: isUploadDisabled ? "#9ca3af" : "white",
               fontWeight: "700",
-              cursor: loading ? "not-allowed" : "pointer",
+              cursor: isUploadDisabled ? "not-allowed" : "pointer",
               fontSize: "15px",
+              opacity: isUploadDisabled ? 0.8 : 1,
+              transition: "all 0.2s ease",
             }}
           >
             {loading ? "Processing..." : "Upload and Generate"}
