@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
@@ -21,7 +21,8 @@ type AIResults = {
 
 type ChatMessage = { role: "user" | "ai"; content: string };
 
-export default function ResultsPage() {
+// This is the internal content function that handles parameters safely inside the Suspense container
+function ResultsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const dbId = searchParams.get("id");
@@ -215,7 +216,7 @@ export default function ResultsPage() {
               </section>
             </div>
 
-            {/* Chatbot Window */}
+            {/* Chatbot Column */}
             <div style={{ display: "flex", flexDirection: "column", backgroundColor: "rgba(17,24,39,0.75)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "18px", height: "calc(100vh - 220px)", overflow: "hidden" }}>
               <div style={{ padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)", backgroundColor: "rgba(31,41,55,0.8)" }}>
                 <h3 style={{ margin: 0, fontSize: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -359,7 +360,7 @@ export default function ResultsPage() {
   );
 }
 
-// --- Sidebar Navigation ---
+// --- Sidebar Global Nav Component ---
 function Sidebar() {
   const pathname = usePathname();
   const [userName, setUserName] = useState("User");
@@ -389,7 +390,7 @@ function Sidebar() {
             const isActive = pathname === item.path;
             return (
               <Link key={item.name} href={item.path} style={{ textDecoration: "none" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", borderRadius: "8px", color: isActive ? "white" : "#cbd5e1", backgroundColor: isActive ? "rgba(255,255,255,0.1)" : "transparent", cursor: "pointer", transition: "background-color 0.2s" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", borderRadius: "8px", color: isActive ? "white" : "#cbd5e1", backgroundColor: isActive ? "rgba(255,255,255,0.1)" : "transparent", cursor: "pointer" }}>
                   <span>{item.icon}</span><span>{item.name}</span>
                 </div>
               </Link>
@@ -405,7 +406,23 @@ function Sidebar() {
   );
 }
 
-// Stylesheet Object Mapping
+// --- CRITICAL SUSPENSE EXPORT BOUNDARY FOR VERCEL ---
+export default function ResultsPage() {
+  return (
+    <Suspense fallback={
+      <main style={{ minHeight: "100vh", display: "flex", backgroundColor: "#050816", color: "white", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontSize: "18px", color: "#a78bfa", fontWeight: "600", marginBottom: "8px" }}>✦ NotesTaker AI</p>
+          <p style={{ color: "#9ca3af", fontSize: "14px" }}>Loading workspace configuration...</p>
+        </div>
+      </main>
+    }>
+      <ResultsContent />
+    </Suspense>
+  );
+}
+
+// --- Stylesheet Variables ---
 const pageStyle = { minHeight: "100vh", display: "flex", background: "linear-gradient(to bottom right, #050816, #0b1023)", color: "white" } as const;
 const sidebarStyle = { width: "250px", backgroundColor: "#11131a", borderRight: "1px solid rgba(255,255,255,0.08)", padding: "24px 18px", zIndex: 10 } as const;
 const mainStyle = { flex: 1, padding: "32px", overflowY: "auto" } as const;
