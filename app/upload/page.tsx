@@ -8,7 +8,7 @@ import { auth } from "../firebase";
 
 export default function UploadPage() {
   const router = useRouter();
-  const pathname = usePathname(); // Used to highlight active sidebar items
+  const pathname = usePathname(); 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -31,7 +31,6 @@ export default function UploadPage() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-
     if (file) {
       setSelectedFile(file);
       setFileName(file.name);
@@ -41,19 +40,18 @@ export default function UploadPage() {
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-
     const file = e.dataTransfer.files?.[0];
 
-if (file) {
-  const allowedTypes = [
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ];
+    if (file) {
+      const allowedTypes = [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
 
-  if (!allowedTypes.includes(file.type)) {
-    setError("Only PDF and DOCX files are supported.");
-    return;
-  }
+      if (!allowedTypes.includes(file.type)) {
+        setError("Only PDF and DOCX files are supported.");
+        return;
+      }
       setSelectedFile(file);
       setFileName(file.name);
       setError("");
@@ -61,7 +59,7 @@ if (file) {
   };
 
   const handleRemoveFile = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevents clicking the dropzone when removing the file
+    e.stopPropagation(); 
     setSelectedFile(null);
     setFileName("");
     if (fileInputRef.current) {
@@ -71,7 +69,7 @@ if (file) {
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      setError("Please select a PDF file first.");
+      setError("Please select a PDF or DOCX file first.");
       return;
     }
 
@@ -91,17 +89,19 @@ if (file) {
       );
 
       if (!res.ok) {
-        setError("Upload failed. Please try again or check the file.");
+        const errorText = await res.text();
+        console.error("Backend Error Status:", res.status);
+        console.error("Backend Error Message:", errorText);
+        
+        setError(`Backend Error (${res.status}): Please check the console or check the file format.`);
         setLoading(false);
         return;
       }
 
       const data = await res.json();
       
-      // 1. Save the AI Results
       localStorage.setItem("aiResults", JSON.stringify(data));
       
-      // 2. NEW: Save the File Metadata so the Results page knows the name!
       const fileMeta = {
         name: selectedFile.name,
         size: (selectedFile.size / (1024 * 1024)).toFixed(2) + " MB",
@@ -109,21 +109,20 @@ if (file) {
       };
       localStorage.setItem("uploadedFile", JSON.stringify(fileMeta));
 
-      // 3. Redirect to results
       router.push("/results");
       
     } catch (err) {
-      console.error(err);
-      setError("Something went wrong while uploading. Please try again.");
+      console.error("Network Fetch Error:", err);
+      setError("Something went wrong while connecting to the server. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   const navItems = [
-    { name: "Dashboard", path: "/dashboard", icon: "▦" }, // View all past PDFs
-    { name: "Folders", path: "/folders", icon: "📁" },     // Organize past PDFs
-    { name: "Settings", path: "/settings", icon: "⚙" },    // Account management
+    { name: "Dashboard", path: "/dashboard", icon: "▦" },
+    { name: "Folders", path: "/folders", icon: "📁" },
+    { name: "Settings", path: "/settings", icon: "⚙" },
   ];
 
   const isUploadDisabled = loading || !selectedFile;
@@ -147,7 +146,7 @@ if (file) {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          zIndex: 10, // Ensure sidebar stays on top
+          zIndex: 10,
         }}
       >
         <div>
@@ -171,21 +170,11 @@ if (file) {
             + New Study Set
           </button>
 
-          <nav
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px", // Reduced gap since padding handles spacing now
-            }}
-          >
+          <nav style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {navItems.map((item) => {
               const isActive = pathname === item.path;
               return (
-                <Link
-                  key={item.name}
-                  href={item.path}
-                  style={{ textDecoration: "none" }}
-                >
+                <Link key={item.name} href={item.path} style={{ textDecoration: "none" }}>
                   <div
                     style={{
                       display: "flex",
@@ -194,9 +183,7 @@ if (file) {
                       padding: "10px",
                       borderRadius: "8px",
                       color: isActive ? "white" : "#cbd5e1",
-                      backgroundColor: isActive
-                        ? "rgba(255,255,255,0.1)"
-                        : "transparent",
+                      backgroundColor: isActive ? "rgba(255,255,255,0.1)" : "transparent",
                       fontSize: "14px",
                       cursor: "pointer",
                       transition: "background-color 0.2s",
@@ -219,19 +206,15 @@ if (file) {
             fontSize: "13px",
           }}
         >
-          ⚙ Settings
-          <p style={{ marginTop: "14px" }}>👤 {userName}</p>
+          <Link href="/settings" style={{ textDecoration: "none", color: "#9ca3af" }}>
+            ⚙ Settings
+          </Link>
+          <p style={{ marginTop: "14px", margin: "14px 0 0" }}>👤 {userName}</p>
         </div>
       </aside>
 
       {/* Main Content */}
-      <section
-        style={{
-          flex: 1,
-          padding: "32px",
-          position: "relative",
-        }}
-      >
+      <section style={{ flex: 1, padding: "32px", position: "relative" }}>
         <h1 style={{ fontSize: "24px", marginBottom: "40px" }}>
           Create New Workspace
         </h1>
@@ -277,15 +260,8 @@ if (file) {
             Import Your Study Materials
           </h2>
 
-          <p
-            style={{
-              color: "#9ca3af",
-              fontSize: "14px",
-              marginBottom: "26px",
-            }}
-          >
-            Our AI will transform your content into organized notes,
-            flashcards, and quizzes.
+          <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "26px" }}>
+            Our AI will transform your content into organized notes, flashcards, and quizzes.
           </p>
 
           <div
@@ -319,12 +295,8 @@ if (file) {
             </div>
 
             <h3 style={{ margin: "0 0 8px" }}>Upload PDF or DOC</h3>
-            <p style={{ color: "#9ca3af", fontSize: "14px" }}>
-              Drag and drop or browse files
-            </p>
-            <p style={{ color: "#6b7280", fontSize: "12px" }}>
-              Maximum 50MB per file
-            </p>
+            <p style={{ color: "#9ca3af", fontSize: "14px" }}>Drag and drop or browse files</p>
+            <p style={{ color: "#6b7280", fontSize: "12px" }}>Maximum 50MB per file</p>
 
             <input
               ref={fileInputRef}
@@ -336,27 +308,11 @@ if (file) {
           </div>
 
           {fileName && (
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              justifyContent: "center", 
-              gap: "8px", 
-              marginBottom: "16px" 
-            }}>
-              <p style={{ color: "#86efac", margin: 0 }}>
-                Selected File: {fileName}
-              </p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "16px" }}>
+              <p style={{ color: "#86efac", margin: 0 }}>Selected File: {fileName}</p>
               <button 
                 onClick={handleRemoveFile}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#ef4444",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: "bold",
-                  padding: "4px"
-                }}
+                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "14px", fontWeight: "bold", padding: "4px" }}
                 title="Remove file"
               >
                 ✕
@@ -364,11 +320,7 @@ if (file) {
             </div>
           )}
 
-          {error && (
-            <p style={{ color: "#f87171", marginBottom: "16px" }}>
-              {error}
-            </p>
-          )}
+          {error && <p style={{ color: "#f87171", marginBottom: "16px" }}>{error}</p>}
 
           <button
             onClick={handleUpload}
@@ -378,9 +330,7 @@ if (file) {
               padding: "14px",
               borderRadius: "12px",
               border: "none",
-              background: isUploadDisabled
-                ? "#374151" // Disabled color
-                : "linear-gradient(to right, #7c3aed, #9333ea)",
+              background: isUploadDisabled ? "#374151" : "linear-gradient(to right, #7c3aed, #9333ea)",
               color: isUploadDisabled ? "#9ca3af" : "white",
               fontWeight: "700",
               cursor: isUploadDisabled ? "not-allowed" : "pointer",
@@ -392,15 +342,7 @@ if (file) {
             {loading ? "Processing..." : "Upload and Generate"}
           </button>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              color: "#6b7280",
-              fontSize: "12px",
-              marginTop: "24px",
-            }}
-          >
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#6b7280", fontSize: "12px", marginTop: "24px" }}>
             <span>🔒 Secure Encryption</span>
             <span>⚡ AI Instant Analysis</span>
             <span>Import from Google Drive</span>
