@@ -44,11 +44,16 @@ export default function UploadPage() {
 
     const file = e.dataTransfer.files?.[0];
 
-    if (file) {
-      if (file.type !== "application/pdf") {
-        setError("Only PDF files are currently supported.");
-        return;
-      }
+if (file) {
+  const allowedTypes = [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ];
+
+  if (!allowedTypes.includes(file.type)) {
+    setError("Only PDF and DOCX files are supported.");
+    return;
+  }
       setSelectedFile(file);
       setFileName(file.name);
       setError("");
