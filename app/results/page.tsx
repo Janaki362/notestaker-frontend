@@ -21,7 +21,6 @@ type AIResults = {
 
 type ChatMessage = { role: "user" | "ai"; content: string };
 
-// This is the internal content function that handles parameters safely inside the Suspense container
 function ResultsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -108,22 +107,32 @@ function ResultsContent() {
     setQuizAnswers(prev => ({ ...prev, [currentQuizIndex]: option }));
   };
 
+  // --- SMART MOCK CHAT SUBMISSION ---
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
-    const newMessages: ChatMessage[] = [...chatMessages, { role: "user", content: chatInput }];
+    const userMessage = chatInput.trim();
+    const newMessages: ChatMessage[] = [...chatMessages, { role: "user", content: userMessage }];
     setChatMessages(newMessages);
     setChatInput("");
     setIsChatLoading(true);
 
     setTimeout(() => {
-      setChatMessages([...newMessages, { 
-        role: "ai", 
-        content: "That's a great question! Based on your notes, this concept refers to protecting data and infrastructure. Do you need more details?" 
-      }]);
+      let mockReply = "I've analyzed your document, but I couldn't find a specific section matching that question. Could you rephrase?";
+      const lowerMessage = userMessage.toLowerCase();
+
+      if (lowerMessage.includes("data protection")) {
+        mockReply = "According to your notes, Data Protection involves safeguarding critical information from corruption, compromise, or loss. It ensures data privacy and structural compliance across network environments.";
+      } else if (lowerMessage.includes("cloud security")) {
+        mockReply = "Based on the uploaded summary, Cloud Security refers to the broad set of policies, technologies, applications, and controls deployed to protect virtualized data and its associated cloud infrastructure.";
+      } else if (lowerMessage === "yes" || lowerMessage.includes("more details") || lowerMessage.includes("detail")) {
+        mockReply = "Certainly! The document emphasizes utilizing targeted micro-segmentation configurations and strict firewall access boundaries as primary strategies to achieve this level of isolation.";
+      }
+
+      setChatMessages([...newMessages, { role: "ai", content: mockReply }]);
       setIsChatLoading(false);
-    }, 1200);
+    }, 1000);
   };
 
   if (!results) {
@@ -360,7 +369,6 @@ function ResultsContent() {
   );
 }
 
-// --- Sidebar Global Nav Component ---
 function Sidebar() {
   const pathname = usePathname();
   const [userName, setUserName] = useState("User");
@@ -406,7 +414,6 @@ function Sidebar() {
   );
 }
 
-// --- CRITICAL SUSPENSE EXPORT BOUNDARY FOR VERCEL ---
 export default function ResultsPage() {
   return (
     <Suspense fallback={
@@ -422,7 +429,6 @@ export default function ResultsPage() {
   );
 }
 
-// --- Stylesheet Variables ---
 const pageStyle = { minHeight: "100vh", display: "flex", background: "linear-gradient(to bottom right, #050816, #0b1023)", color: "white" } as const;
 const sidebarStyle = { width: "250px", backgroundColor: "#11131a", borderRight: "1px solid rgba(255,255,255,0.08)", padding: "24px 18px", zIndex: 10 } as const;
 const mainStyle = { flex: 1, padding: "32px", overflowY: "auto" } as const;

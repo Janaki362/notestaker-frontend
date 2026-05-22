@@ -313,7 +313,7 @@ export default function UploadPage() {
               📄
             </div>
 
-            <h3 style={{ margin: "0 0 8px" }}>Upload PDF</h3>
+            <h3 style={{ margin: "0 0 8px" }}>Upload PDF or DOC</h3>
             <p style={{ color: "#9ca3af", fontSize: "14px" }}>
               Drag and drop or browse files
             </p>
@@ -324,7 +324,7 @@ export default function UploadPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               onChange={handleFileChange}
               style={{ display: "none" }}
             />
