@@ -39,6 +39,8 @@ function ResultsContent() {
   // Quiz State
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
+  const [score, setScore] = useState(0); 
+  const [isQuizFinished, setIsQuizFinished] = useState(false); // NEW: Controls the frosted glass score modal overlay
 
   // Chatbot State
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -104,10 +106,26 @@ function ResultsContent() {
   };
 
   const handleAnswerSelect = (option: string) => {
+    if (quizAnswers[currentQuizIndex]) return;
+
     setQuizAnswers(prev => ({ ...prev, [currentQuizIndex]: option }));
+
+    if (results && results.quiz[currentQuizIndex]) {
+      const isCorrect = option === results.quiz[currentQuizIndex].answer;
+      if (isCorrect) {
+        setScore(prev => prev + 1);
+      }
+    }
   };
 
-  // --- SMART MOCK CHAT SUBMISSION ---
+  // NEW: Reset method if they want to re-try the quiz on the fly during the demo
+  const handleResetQuiz = () => {
+    setQuizAnswers({});
+    setScore(0);
+    setCurrentQuizIndex(0);
+    setIsQuizFinished(false);
+  };
+
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -168,6 +186,38 @@ function ResultsContent() {
       <aside style={sidebarStyle}><Sidebar /></aside>
 
       <section style={mainStyle}>
+        {/* --- DYNAMIC TRANSITION FROSTED GLASS MODAL --- */}
+        {activeTab === "Quiz" && isQuizFinished && (
+          <div style={modalOverlayBlurStyle}>
+            <div style={modalCardStyle}>
+              <div style={modalIconCircleStyle}>🎓</div>
+              <h2 style={{ fontSize: "28px", fontWeight: "700", margin: "0 0 8px 0", letterSpacing: "-0.5px" }}>Quiz Completed!</h2>
+              <p style={{ color: "#9ca3af", fontSize: "14px", margin: "0 0 28px 0" }}>Great effort! Here is your deep focus performance breakdown.</p>
+              
+              <div style={scoreMetricBoxStyle}>
+                <div style={{ fontSize: "12px", fontWeight: "600", color: "#a78bfa", letterSpacing: "1px", marginBottom: "4px" }}>TOTAL ACCURACY</div>
+                <div style={{ fontSize: "48px", fontWeight: "800", color: "white" }}>
+                  {score} <span style={{ color: "#4b5563", fontSize: "24px", fontWeight: "400" }}>/ {results.quiz.length}</span>
+                </div>
+                <div style={{ fontSize: "13px", color: "#9ca3af", marginTop: "8px" }}>
+                  Percentage Score: <b>{Math.round((score / results.quiz.length) * 100)}%</b>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "14px", justifyContent: "center" }}>
+                <button onClick={handleResetQuiz} style={secondaryButtonStyle}>
+                  🔄 Try Again
+                </button>
+                <Link href="/dashboard" style={{ textDecoration: "none" }}>
+                  <button style={purpleButtonStyle}>
+                    ▦ Go to Dashboard
+                  </button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
         <header style={topBarStyle}>
           <div>
             <p style={{ color: "#9ca3af", margin: 0 }}>Notes Editor</p>
@@ -303,7 +353,7 @@ function ResultsContent() {
           <div style={{ maxWidth: "700px", margin: "0 auto", paddingTop: "20px" }}>
              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", color: "#9ca3af" }}>
               <span>Question {currentQuizIndex + 1} of {results.quiz.length}</span>
-              <span>Score: {Object.values(quizAnswers).filter((ans, i) => ans === results.quiz[i]?.answer).length} / {results.quiz.length}</span>
+              <span>Score: {score} / {results.quiz.length}</span>
             </div>
 
             <section style={{...quizCardStyle, padding: "40px"}}>
@@ -334,7 +384,7 @@ function ResultsContent() {
                         backgroundColor: showFeedback 
                           ? (isCorrect ? "rgba(34,197,94,0.12)" : (isSelected ? "rgba(239,68,68,0.12)" : "#111827")) 
                           : (isSelected ? "rgba(139, 92, 246, 0.15)" : "#111827"),
-                        cursor: selectedAnswer ? "default" : "pointer",
+                        cursor: selectedAnswer ? "default" : "pointer", 
                         transition: "all 0.2s ease"
                       }}
                     >
@@ -358,9 +408,17 @@ function ResultsContent() {
 
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: "30px" }}>
               <button disabled={currentQuizIndex === 0} onClick={() => setCurrentQuizIndex(prev => prev - 1)} style={secondaryButtonStyle}>← Previous</button>
-              <button disabled={currentQuizIndex === results.quiz.length - 1} onClick={() => setCurrentQuizIndex(prev => prev + 1)} style={secondaryButtonStyle}>
-                {currentQuizIndex === results.quiz.length - 1 ? "Finish Quiz" : "Next Question →"}
-              </button>
+              
+              {currentQuizIndex === results.quiz.length - 1 ? (
+                /* FIXED: Triggers frosted glass display layout state on final completion node */
+                <button onClick={() => setIsQuizFinished(true)} style={purpleButtonStyle}>
+                  Finish Quiz
+                </button>
+              ) : (
+                <button onClick={() => setCurrentQuizIndex(prev => prev + 1)} style={secondaryButtonStyle}>
+                  Next Question →
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -429,6 +487,7 @@ export default function ResultsPage() {
   );
 }
 
+// --- High Fidelity Design Architecture Tokens ---
 const pageStyle = { minHeight: "100vh", display: "flex", background: "linear-gradient(to bottom right, #050816, #0b1023)", color: "white" } as const;
 const sidebarStyle = { width: "250px", backgroundColor: "#11131a", borderRight: "1px solid rgba(255,255,255,0.08)", padding: "24px 18px", zIndex: 10 } as const;
 const mainStyle = { flex: 1, padding: "32px", overflowY: "auto" } as const;
@@ -448,3 +507,51 @@ const secondaryButtonStyle = { backgroundColor: "transparent", color: "#a78bfa",
 const navStyle = { display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" } as const;
 const profileStyle = { borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "16px", color: "#9ca3af", fontSize: "13px" } as const;
 const emptyCardStyle = { maxWidth: "420px", margin: "120px auto", backgroundColor: "rgba(17,24,39,0.85)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "18px", padding: "32px", textAlign: "center" } as const;
+
+// NEW: Frosted Glass Overlay Design Layout Tokens
+const modalOverlayBlurStyle = {
+  position: "fixed" as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "rgba(3, 3, 3, 0.6)", // Transparent dark shroud layer
+  backdropFilter: "blur(12px)", // Premium background frosted glass effect
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+  padding: "24px"
+};
+
+const modalCardStyle = {
+  width: "100%",
+  maxWidth: "460px",
+  backgroundColor: "#09090b",
+  border: "1px solid rgba(255, 255, 255, 0.08)",
+  borderRadius: "20px",
+  padding: "40px 32px",
+  textAlign: "center" as const,
+  boxShadow: "0 30px 60px rgba(0, 0, 0, 0.5)"
+};
+
+const modalIconCircleStyle = {
+  width: "56px",
+  height: "56px",
+  borderRadius: "50%",
+  backgroundColor: "rgba(139, 92, 246, 0.15)",
+  border: "1px solid rgba(139, 92, 246, 0.3)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: "24px",
+  margin: "0 auto 20px auto"
+};
+
+const scoreMetricBoxStyle = {
+  backgroundColor: "rgba(255, 255, 255, 0.02)",
+  border: "1px solid rgba(255, 255, 255, 0.04)",
+  borderRadius: "14px",
+  padding: "24px",
+  marginBottom: "32px"
+};

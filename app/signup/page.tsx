@@ -13,10 +13,10 @@ import { useState } from "react";
 export default function SignupPage() {
   const router = useRouter();
 
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -27,7 +27,7 @@ export default function SignupPage() {
       await signInWithPopup(auth, googleProvider);
       router.push("/upload");
     } catch (error) {
-      console.error("Signup failed:", error);
+      console.error("Google signup failed:", error);
       setErrorMessage("Google signup failed. Please try again.");
       setIsLoading(false);
     }
@@ -35,7 +35,7 @@ export default function SignupPage() {
 
   const handleEmailSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName || !email || !password) {
+    if (!firstName || !lastName || !email || !password) {
       setErrorMessage("Please fill all fields.");
       return;
     }
@@ -45,8 +45,9 @@ export default function SignupPage() {
       setErrorMessage("");
       const result = await createUserWithEmailAndPassword(auth, email, password);
 
+      const completeName = `${firstName.trim()} ${lastName.trim()}`;
       await updateProfile(result.user, {
-        displayName: fullName,
+        displayName: completeName,
       });
 
       router.push("/upload");
@@ -58,167 +59,88 @@ export default function SignupPage() {
   };
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        background: "linear-gradient(to bottom right, #050816, #0b1023)",
-        color: "white",
-      }}
-    >
-      {/* Left Marketing Section */}
-      <section
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          padding: "60px",
-        }}
-      >
-        <div style={{ maxWidth: "520px" }}>
-          <h1 style={{ fontSize: "48px", lineHeight: "1.2", marginBottom: "20px" }}>
-            Create Your AI Study Workspace
-          </h1>
-          <p style={{ color: "#9ca3af", fontSize: "18px", lineHeight: "1.7" }}>
-            Upload notes, generate AI-powered summaries, flashcards, and quizzes
-            to make studying smarter and faster.
-          </p>
+    <main style={pageWrapperStyle}>
+      {/* Top Header Layer to match Landing Page Navigation */}
+      <header style={headerStyle}>
+        <div style={{ fontSize: "15px", fontWeight: "bold", letterSpacing: "0.5px" }}>
+          NotesTaker AI
         </div>
-      </section>
+        <div style={{ display: "flex", gap: "24px", fontSize: "13px", color: "#9ca3af", alignItems: "center" }}>
+          <Link href="/#features" style={headerLinkStyle}>Product</Link>
+          <Link href="/#features" style={headerLinkStyle}>Docs</Link>
+          <Link href="/#pricing" style={headerLinkStyle}>Pricing</Link>
+        </div>
+        <div style={{ display: "flex", gap: "16px", fontSize: "13px", alignItems: "center" }}>
+          <Link href="/login" style={headerLinkStyle}>Log In</Link>
+          <Link href="/signup" style={{ textDecoration: "none" }}>
+            <button style={topSignUpButtonStyle}>Sign Up</button>
+          </Link>
+        </div>
+      </header>
 
-      {/* Right Signup Section */}
-      <section
-        style={{
-          width: "480px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "40px",
-          marginRight: "4vw", // Added right margin to let it breathe
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            backgroundColor: "rgba(17,24,39,0.92)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: "24px",
-            padding: "40px",
-            boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "32px",
-            }}
-          >
-            <h2 style={{ margin: 0 }}>Sign Up</h2>
-            {/* Keeping the top right toggle for a modern feel */}
-            <Link
-              href="/login"
-              style={{
-                color: "#a78bfa",
-                textDecoration: "none",
-                fontSize: "14px",
-                cursor: "pointer",
-              }}
-            >
-              Login
-            </Link>
+      {/* Centered Content Card Area */}
+      <section style={cardSectionStyle}>
+        <div style={cardFormWrapperStyle}>
+          <div style={{ textAlign: "center", marginBottom: "28px" }}>
+            <h1 style={{ fontSize: "28px", fontWeight: "600", margin: "0 0 6px 0", letterSpacing: "-0.5px" }}>Sign Up</h1>
+            <p style={{ color: "#71717a", fontSize: "14px", margin: 0 }}>Create notes in minutes. No credit card required.</p>
           </div>
 
           {errorMessage && (
-            <div 
-              style={{ 
-                color: "#ef4444", 
-                marginBottom: "16px", 
-                fontSize: "14px",
-                padding: "10px",
-                backgroundColor: "rgba(239, 68, 68, 0.1)",
-                borderRadius: "8px",
-                border: "1px solid rgba(239, 68, 68, 0.2)"
-              }}
-            >
+            <div style={errorContainerStyle}>
               {errorMessage}
             </div>
           )}
 
-          {/* Google Button */}
+          {/* Google Authentication Entry */}
           <button
             type="button"
             onClick={handleGoogleSignup}
             disabled={isLoading}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "10px",
-              padding: "14px",
-              backgroundColor: "#1f2937",
-              color: "white",
-              borderRadius: "12px",
-              border: "1px solid #374151",
-              cursor: isLoading ? "not-allowed" : "pointer",
-              fontWeight: "600",
-              marginBottom: "18px",
-              opacity: isLoading ? 0.7 : 1,
-            }}
+            style={{ ...socialButtonStyle, marginBottom: "24px" }}
           >
-            <span
-              style={{
-                width: "24px",
-                height: "24px",
-                borderRadius: "50%",
-                backgroundColor: "white",
-                color: "black",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: "bold",
-              }}
-            >
-              G
-            </span>
+            <span style={socialIconWrapperStyle}>G</span>
             Continue with Google
           </button>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              marginBottom: "24px",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
             <div style={dividerStyle} />
-            <span style={{ color: "#9ca3af", fontSize: "13px" }}>OR</span>
+            <span style={{ color: "#3f3f46", fontSize: "12px", fontWeight: "600" }}>OR</span>
             <div style={dividerStyle} />
           </div>
 
-          {/* Email/Password Form */}
+          {/* Form Ingestion Grid */}
           <form onSubmit={handleEmailSignup}>
-            <div style={{ marginBottom: "18px" }}>
-              <label style={labelStyle}>Full Name</label>
-              <input
-                type="text"
-                placeholder="Enter your full name"
-                style={inputStyle}
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
+            <div style={{ display: "flex", gap: "14px", marginBottom: "16px" }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>First name</label>
+                <input
+                  type="text"
+                  placeholder="Sarthak"
+                  style={inputStyle}
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelStyle}>Last name</label>
+                <input
+                  type="text"
+                  placeholder="Dhawan"
+                  style={inputStyle}
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                />
+              </div>
             </div>
 
-            <div style={{ marginBottom: "18px" }}>
+            <div style={{ marginBottom: "16px" }}>
               <label style={labelStyle}>Email</label>
               <input
                 type="email"
-                placeholder="Enter your email"
+                placeholder="sarthak@example.com"
                 style={inputStyle}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -226,106 +148,198 @@ export default function SignupPage() {
               />
             </div>
 
-            <div style={{ marginBottom: "24px", position: "relative" }}>
+            <div style={{ marginBottom: "28px" }}>
               <label style={labelStyle}>Password</label>
-              <div style={{ position: "relative" }}>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Create a password"
-                  style={{ ...inputStyle, paddingRight: "50px" }} // Room for toggle
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: "absolute",
-                    right: "12px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "none",
-                    border: "none",
-                    color: "#9ca3af",
-                    cursor: "pointer",
-                    fontSize: "12px",
-                    fontWeight: "bold",
-                  }}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
-              </div>
+              <input
+                type="password"
+                placeholder="••••••••"
+                style={inputStyle}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
             </div>
 
             <button
               type="submit"
               disabled={isLoading}
-              style={{
-                width: "100%",
-                padding: "14px",
-                borderRadius: "12px",
-                border: "none",
-                background: "linear-gradient(to right, #7c3aed, #9333ea)",
-                color: "white",
-                fontWeight: "700",
-                cursor: isLoading ? "not-allowed" : "pointer",
-                fontSize: "15px",
-                opacity: isLoading ? 0.7 : 1,
-              }}
+              style={submitButtonStyle}
             >
-              {isLoading ? "Creating Account..." : "Create Account"}
+              {isLoading ? "Creating account..." : "Create an account"}
             </button>
           </form>
 
-          {/* Restored Bottom Link */}
-          <p
-            style={{
-              textAlign: "center",
-              marginTop: "24px",
-              color: "#9ca3af",
-              fontSize: "14px",
-            }}
-          >
+          <p style={bottomRedirectTextStyle}>
             Already have an account?{" "}
-            <Link
-              href="/login"
-              style={{
-                color: "#a78bfa",
-                textDecoration: "none",
-                cursor: "pointer",
-              }}
-            >
+            <Link href="/login" style={{ color: "white", textDecoration: "underline" }}>
               Sign in
             </Link>
           </p>
         </div>
       </section>
+
+      {/* Fine Print Legal Footer Layer */}
+      <footer style={footerStyle}>
+        By creating or entering an account, you agree to the{" "}
+        <Link href="#" style={footerLinkStyle}>Terms of Service</Link> and{" "}
+        <Link href="#" style={footerLinkStyle}>Privacy Policy</Link>.
+      </footer>
     </main>
   );
 }
 
-const inputStyle = {
-  width: "100%",
-  padding: "14px",
-  borderRadius: "12px",
-  border: "1px solid #374151",
-  backgroundColor: "#111827",
+// --- Style Settings Mapping ---
+const pageWrapperStyle = {
+  minHeight: "100vh",
+  display: "flex",
+  flexDirection: "column" as const,
+  backgroundColor: "#09090b",
   color: "white",
-  fontSize: "14px",
-  outline: "none",
-  boxSizing: "border-box", // ensures padding doesn't overflow width
-} as const;
+  fontFamily: "'Urbanist', sans-serif"
+};
 
-const labelStyle = {
-  display: "block",
-  marginBottom: "8px",
-  color: "#d1d5db",
+const headerStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  padding: "24px 64px",
+  backgroundColor: "transparent",
+  borderBottom: "1px solid rgba(255,255,255,0.02)"
+};
+
+const headerLinkStyle = {
+  color: "#a1a1aa",
+  textDecoration: "none",
+  fontSize: "13px",
+  fontWeight: "500"
+};
+
+const topSignUpButtonStyle = {
+  backgroundColor: "#8b5cf6",
+  color: "white",
+  border: "none",
+  borderRadius: "8px",
+  padding: "8px 16px",
+  fontSize: "13px",
+  fontWeight: "600",
+  cursor: "pointer"
+};
+
+const cardSectionStyle = {
+  flex: 1,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "40px 24px"
+};
+
+const cardFormWrapperStyle = {
+  width: "100%",
+  maxWidth: "440px",
+  backgroundColor: "rgba(9,9,11,0.6)",
+  border: "1px solid rgba(255,255,255,0.04)",
+  borderRadius: "16px",
+  padding: "36px",
+  boxShadow: "0 20px 50px rgba(0,0,0,0.3)"
+};
+
+const socialButtonStyle = {
+  width: "100%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "12px",
+  padding: "12px",
+  backgroundColor: "#18181b",
+  color: "#e4e4e7",
+  borderRadius: "10px",
+  border: "1px solid rgba(255,255,255,0.05)",
+  cursor: "pointer",
+  fontWeight: "600",
   fontSize: "14px",
-} as const;
+  transition: "background-color 0.2s"
+};
+
+const socialIconWrapperStyle = {
+  width: "20px",
+  height: "20px",
+  borderRadius: "4px",
+  backgroundColor: "white",
+  color: "black",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: "bold",
+  fontSize: "11px"
+};
 
 const dividerStyle = {
   flex: 1,
   height: "1px",
-  backgroundColor: "#374151",
-} as const;
+  backgroundColor: "rgba(255,255,255,0.04)"
+};
+
+const inputStyle = {
+  width: "100%",
+  padding: "11px 14px",
+  borderRadius: "8px",
+  border: "1px solid rgba(255,255,255,0.08)",
+  backgroundColor: "#09090b",
+  color: "white",
+  fontSize: "14px",
+  outline: "none"
+};
+
+const labelStyle = {
+  display: "block",
+  marginBottom: "6px",
+  color: "#a1a1aa",
+  fontSize: "12px",
+  fontWeight: "500"
+};
+
+const submitButtonStyle = {
+  width: "100%",
+  padding: "12px",
+  borderRadius: "8px",
+  border: "none",
+  background: "#8b5cf6",
+  color: "white",
+  fontWeight: "600",
+  cursor: "pointer",
+  fontSize: "14px",
+  transition: "opacity 0.2s"
+};
+
+const errorContainerStyle = {
+  color: "#ef4444",
+  removeAttribute: true,
+  marginBottom: "16px",
+  fontSize: "13px",
+  padding: "10px",
+  backgroundColor: "rgba(239, 68, 68, 0.06)",
+  borderRadius: "6px",
+  border: "1px solid rgba(239, 68, 68, 0.15)",
+  textAlign: "center" as const
+};
+
+const bottomRedirectTextStyle = {
+  textAlign: "center" as const,
+  marginTop: "24px",
+  color: "#71717a",
+  fontSize: "13px",
+  marginBottom: 0
+};
+
+const footerStyle = {
+  padding: "24px",
+  textAlign: "center" as const,
+  color: "#3f3f46",
+  fontSize: "11px",
+  borderTop: "1px solid rgba(255,255,255,0.01)"
+};
+
+const footerLinkStyle = {
+  color: "#71717a",
+  textDecoration: "underline"
+};
