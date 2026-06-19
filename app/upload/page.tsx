@@ -4,38 +4,37 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "../firebase";
 
 export default function UploadPage() {
   const router = useRouter();
-  const pathname = usePathname(); 
+  const pathname = usePathname();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
+  const [mode, setMode] = useState<"student" | "legal" | "medical" | "business">("student");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [userName, setUserName] = useState("User");
+  const [user, setUser] = useState<any>(null); // Added user state to save to db
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUserName(user.displayName || user.email || "User");
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUserName(currentUser.displayName || currentUser.email || "User");
+        setUser(currentUser);
       } else {
         router.push("/login");
       }
     });
-
     return () => unsubscribe();
   }, [router]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      setFileName(file.name);
-      setError("");
-    }
+    if (file) { setSelectedFile(file); setFileName(file.name); setError(""); }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -68,53 +67,56 @@ export default function UploadPage() {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile) {
-      setError("Please select a PDF or DOCX file first.");
-      return;
-    }
+    if (!selectedFile || !user) return;
+    setLoading(true);
+    setError("");
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    formData.append("mode", mode);
 
     try {
-      setLoading(true);
-      setError("");
+      // Call the production Cloud Run URL
+      const res = await fetch("https://notestaker-backend-194267172594.us-central1.run.app/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      const res = await fetch(
-        "https://notestaker-backend-194267172594.us-central1.run.app/upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
+      // --- Smart Validation Error Handling ---
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Backend Error Status:", res.status);
-        console.error("Backend Error Message:", errorText);
+        const errorData = await res.json().catch(() => ({}));
         
-        setError(`Backend Error (${res.status}): ${errorText || "Internal pipeline failure parsing this layout structure."}`);
-        setLoading(false);
-        return;
+        // Catch Alekhya's document mismatch 422 error
+        if (res.status === 422) {
+          throw new Error(`⚠️ ${errorData.error} \n💡 Tip: ${errorData.tip || `Try using ${errorData.suggestedMode} mode instead.`}`);
+        }
+        
+        const errorMessage = errorData.error 
+          ? (errorData.tip ? `${errorData.error} ${errorData.tip}` : errorData.error)
+          : "Upload failed. Please check your network or try again.";
+        throw new Error(errorMessage);
       }
 
+      // --- Capture the new AI Metadata ---
       const data = await res.json();
       
-      localStorage.setItem("aiResults", JSON.stringify(data));
-      
-      const fileMeta = {
-        name: selectedFile.name,
-        size: (selectedFile.size / (1024 * 1024)).toFixed(2) + " MB",
-        uploadDate: new Date().toLocaleDateString(),
-      };
-      localStorage.setItem("uploadedFile", JSON.stringify(fileMeta));
+      // Save to Firebase Database
+      const docRef = await addDoc(collection(db, "studySets"), {
+        userId: user.uid,
+        fileName: selectedFile.name,
+        data: data,
+        mode: data.mode || mode, // The actual mode used
+        detectedType: data.detectedType || "unknown", // What Vertex AI detected
+        cached: data.cached || false, // Did it skip the AI billing cost?
+        createdAt: serverTimestamp(),
+      });
 
-      router.push("/results");
-      
-    } catch (err) {
-      console.error("Network Fetch Error:", err);
-      setError("Something went wrong while connecting to the server. Please check your network or try again.");
-    } finally {
+      // Navigate to results passing the newly created document ID
+      router.push(`/results?id=${docRef.id}`);
+
+    } catch (err: any) {
+      // Displays the exact backend error dynamically
+      setError(err.message || "Something went wrong while connecting to the server.");
       setLoading(false);
     }
   };
@@ -123,132 +125,72 @@ export default function UploadPage() {
 
   return (
     <main style={pageStyle}>
-      {/* Sidebar - Shared Component Logic Mapping */}
-      <aside style={sidebarStyle}>
-        <Sidebar userName={userName} />
-      </aside>
-
-      {/* Main Content Area */}
+      <aside style={sidebarStyle}><Sidebar userName={userName} pathname={pathname} /></aside>
       <section style={mainStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px" }}>
-          <h1 style={{ fontSize: "32px", margin: 0, fontWeight: "bold" }}>
-            Create New Workspace
-          </h1>
-
-          {/* Stepper Indicator Row */}
-          <div style={{ display: "flex", alignItems: "center", gap: "24px", color: "#9ca3af", fontSize: "12px", textTransform: "uppercase" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "white" }}>
-              <div style={stepActive}>1</div> Upload
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div style={stepInactive}>2</div> Process
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div style={stepInactive}>3</div> Study
-            </div>
+          <h1 style={{ fontSize: "32px", margin: 0, fontWeight: "800", color: "#111827" }}>Create New Workspace</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: "24px", fontSize: "13px", fontWeight: "600", textTransform: "uppercase" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#111827" }}><div style={stepActive}>1</div> Upload</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#9ca3af" }}><div style={stepInactive}>2</div> Process</div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#9ca3af" }}><div style={stepInactive}>3</div> Study</div>
           </div>
         </div>
 
-        {/* Upload Interaction Workspace Box Card */}
-        <div
-          style={{
-            maxWidth: "620px",
-            margin: "40px auto 0 auto",
-            backgroundColor: "rgba(17, 24, 39, 0.75)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: "20px",
-            padding: "34px",
-            boxShadow: "0 12px 35px rgba(0,0,0,0.35)",
-            textAlign: "center",
-          }}
-        >
-          <h2 style={{ fontSize: "20px", marginBottom: "8px", fontWeight: "600" }}>
-            Import Your Study Materials
-          </h2>
+        <div style={{ maxWidth: "620px", margin: "40px auto 0 auto", backgroundColor: "#ffffff", border: "1px solid #e5e7eb", borderRadius: "20px", padding: "40px", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.05)", textAlign: "center" }}>
+          <h2 style={{ fontSize: "22px", marginBottom: "8px", fontWeight: "700" }}>Import Your Study Materials</h2>
+          <p style={{ color: "#6b7280", fontSize: "15px", marginBottom: "32px" }}>Our AI will transform your content into organized notes, flashcards, and quizzes.</p>
 
-          <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "26px" }}>
-            Our AI will transform your content into organized notes, flashcards, and quizzes.
-          </p>
+          <div style={{ marginBottom: "24px", textAlign: "left" }}>
+            <label style={{ display: "block", marginBottom: "8px", fontWeight: "600", fontSize: "14px" }}>Select Study Mode</label>
+            <select value={mode} onChange={(e) => setMode(e.target.value as any)} style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #d1d5db", cursor: "pointer", fontSize: "14px", outline: "none", transition: "border-color 0.2s" }} onFocus={(e) => e.target.style.borderColor = "#2563eb"} onBlur={(e) => e.target.style.borderColor = "#d1d5db"}>
+              <option value="student">Student</option>
+              <option value="legal">Legal</option>
+              <option value="medical">Medical</option>
+              <option value="business">Business</option>
+            </select>
+          </div>
 
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             style={{
-              border: "2px dashed rgba(255,255,255,0.15)",
-              borderRadius: "16px",
-              padding: "42px 20px",
-              backgroundColor: "rgba(17, 24, 39, 0.85)",
-              cursor: "pointer",
-              marginBottom: "22px",
-              transition: "border-color 0.2s ease",
+              ...dropZoneStyle,
+              borderColor: selectedFile ? "#2563eb" : "#d1d5db",
+              backgroundColor: selectedFile ? "#eff6ff" : "#fafafa",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#2563eb";
+              e.currentTarget.style.backgroundColor = "#eff6ff";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = selectedFile ? "#2563eb" : "#d1d5db";
+              e.currentTarget.style.backgroundColor = selectedFile ? "#eff6ff" : "#fafafa";
             }}
           >
-            <div
-              style={{
-                width: "52px",
-                height: "52px",
-                borderRadius: "14px",
-                backgroundColor: "#8b5cf6",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 14px",
-                fontSize: "24px",
-              }}
-            >
+            <div style={{ width: "56px", height: "56px", borderRadius: "14px", backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: "24px" }}>
               📄
             </div>
-
-            <h3 style={{ margin: "0 0 8px", fontSize: "16px", fontWeight: "600" }}>Upload PDF or DOCX</h3>
-            <p style={{ color: "#9ca3af", fontSize: "14px" }}>Drag and drop or browse files</p>
-            <p style={{ color: "#6b7280", fontSize: "12px" }}>Maximum 50MB per file</p>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              onChange={handleFileChange}
-              style={{ display: "none" }}
-            />
+            <h3 style={{ margin: "0 0 8px", fontSize: "16px", fontWeight: "700", color: "#111827" }}>Upload PDF or DOCX</h3>
+            <p style={{ color: "#6b7280", fontSize: "14px", margin: "0 0 4px 0" }}>Click or drop files here</p>
+            <p style={{ color: "#9ca3af", fontSize: "12px", margin: 0 }}>Maximum 50MB per file</p>
+            <input ref={fileInputRef} type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleFileChange} style={{ display: "none" }} />
           </div>
 
           {fileName && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "16px" }}>
-              <p style={{ color: "#86efac", margin: 0, fontSize: "14px" }}>Selected File: {fileName}</p>
-              <button 
-                onClick={handleRemoveFile}
-                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: "14px", fontWeight: "bold", padding: "4px" }}
-                title="Remove file"
-              >
-                ✕
-              </button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", marginBottom: "20px" }}>
+              <p style={{ color: "#059669", margin: 0, fontSize: "14px", fontWeight: "600", backgroundColor: "#ecfdf5", padding: "6px 12px", borderRadius: "8px", border: "1px solid #a7f3d0" }}>✓ Selected: {fileName}</p>
+              <button onClick={handleRemoveFile} style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", cursor: "pointer", fontSize: "12px", fontWeight: "bold", padding: "6px 10px", borderRadius: "8px" }} title="Remove file">✕</button>
             </div>
           )}
+          
+          {error && <p style={{ color: "#dc2626", marginBottom: "20px", fontSize: "14px", fontWeight: "600", padding: "10px", backgroundColor: "#fef2f2", borderRadius: "8px", border: "1px solid #fecaca", whiteSpace: "pre-line" }}>{error}</p>}
 
-          {error && <p style={{ color: "#f87171", marginBottom: "16px", fontSize: "14px" }}>{error}</p>}
-
-          <button
-            onClick={handleUpload}
-            disabled={isUploadDisabled}
-            style={{
-              width: "100%",
-              padding: "14px",
-              borderRadius: "12px",
-              border: "none",
-              background: isUploadDisabled ? "#374151" : "linear-gradient(to right, #7c3aed, #9333ea)",
-              color: isUploadDisabled ? "#9ca3af" : "white",
-              fontWeight: "700",
-              cursor: isUploadDisabled ? "not-allowed" : "pointer",
-              fontSize: "15px",
-              opacity: isUploadDisabled ? 0.8 : 1,
-              transition: "all 0.2s ease",
-            }}
-          >
-            {loading ? "Processing..." : "Upload and Generate"}
+          <button onClick={handleUpload} disabled={isUploadDisabled} style={{ ...uploadButtonStyle, backgroundColor: isUploadDisabled ? "#e5e7eb" : "#2563eb", color: isUploadDisabled ? "#9ca3af" : "white", cursor: isUploadDisabled ? "not-allowed" : "pointer", boxShadow: isUploadDisabled ? "none" : "0 4px 6px -1px rgba(37, 99, 235, 0.2)" }}>
+            {loading ? "Processing Document..." : "Upload and Generate"}
           </button>
-
-          <div style={{ display: "flex", justifyContent: "space-between", color: "#6b7280", fontSize: "12px", marginTop: "24px" }}>
+          
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#6b7280", fontSize: "13px", fontWeight: "500", marginTop: "32px", padding: "0 10px" }}>
             <span>🔒 Secure Encryption</span>
             <span>⚡ AI Instant Analysis</span>
             <span>💾 Auto-Save Cloud Session</span>
@@ -259,31 +201,23 @@ export default function UploadPage() {
   );
 }
 
-// --- Shared Core Sidebar Component Implementation ---
-function Sidebar({ userName }: { userName: string }) {
-  const pathname = usePathname();
-  const navItems = [
-    { name: "Dashboard", path: "/dashboard", icon: "▦" }, 
-    { name: "Folders", path: "/folders", icon: "📁" }, 
-    { name: "Settings", path: "/settings", icon: "⚙" }
-  ];
-
+function Sidebar({ userName, pathname }: { userName: string; pathname: string }) {
+  const navItems = [{ name: "Dashboard", path: "/dashboard", icon: "▦" }, { name: "Folders", path: "/folders", icon: "📁" }, { name: "Settings", path: "/settings", icon: "⚙" }];
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <div>
-        <h2 style={{ margin: "0 0 24px", fontSize: "18px", fontWeight: "bold" }}>✦ NotesTaker AI</h2>
+        <h2 style={{ margin: "0 0 24px", fontSize: "18px", color: "#111827", fontWeight: "700", letterSpacing: "-0.5px" }}>
+          <span style={{ color: "#2563eb", marginRight: "6px" }}>✦</span>NotesTaker AI
+        </h2>
         <Link href="/upload" style={{ textDecoration: "none" }}>
-          <button style={{ backgroundColor: "#8b5cf6", color: "white", border: "none", borderRadius: "10px", padding: "12px 16px", fontWeight: "600", cursor: "pointer", width: "100%", marginBottom: "24px" }}>
-            + New Study Set
-          </button>
+          <button style={{ ...primaryButtonStyle, width: "100%", marginBottom: "24px" }}>+ New Study Set</button>
         </Link>
-        <nav style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" }}>
+        <nav style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "12px" }}>
           {navItems.map((item) => {
-            // Evaluates dashboard layout highlights if inside upload loop structure
-            const isActive = item.path === "/dashboard" || pathname === item.path;
+            const isActive = pathname === item.path;
             return (
               <Link key={item.name} href={item.path} style={{ textDecoration: "none" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", borderRadius: "8px", color: isActive ? "white" : "#cbd5e1", backgroundColor: isActive ? "rgba(255,255,255,0.1)" : "transparent", cursor: "pointer", fontSize: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "8px", color: isActive ? "#2563eb" : "#4b5563", backgroundColor: isActive ? "#eff6ff" : "transparent", fontWeight: isActive ? "600" : "500", cursor: "pointer", transition: "background-color 0.2s" }}>
                   <span>{item.icon}</span><span>{item.name}</span>
                 </div>
               </Link>
@@ -291,40 +225,21 @@ function Sidebar({ userName }: { userName: string }) {
           })}
         </nav>
       </div>
-      <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "16px", color: "#9ca3af", fontSize: "13px", marginTop: "auto" }}>
-        <p style={{ margin: 0 }}>👤 {userName}</p>
-        <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#6b7280" }}>AI Study Workspace</p>
+      <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "20px", marginTop: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#111827", fontWeight: "600", fontSize: "14px", margin: 0 }}>
+          <span style={{ backgroundColor: "#e5e7eb", borderRadius: "50%", padding: "4px" }}>👤</span> {userName}
+        </div>
+        <p style={{ margin: "4px 0 0 32px", fontSize: "12px", color: "#6b7280" }}>AI Study Workspace</p>
       </div>
     </div>
   );
 }
 
-// --- Layout Tokens Framework Mapping ---
-const pageStyle = { minHeight: "100vh", display: "flex", background: "linear-gradient(to bottom right, #050816, #0b1023)", color: "white" } as const;
-const sidebarStyle = { width: "250px", backgroundColor: "#11131a", borderRight: "1px solid rgba(255,255,255,0.08)", padding: "24px 18px", zIndex: 10 } as const;
-const mainStyle = { flex: 1, padding: "40px", overflowY: "auto" as const } as const;
-
-const stepActive = {
-  width: "24px",
-  height: "24px",
-  borderRadius: "50%",
-  backgroundColor: "#8b5cf6",
-  color: "white",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: "bold",
-  fontSize: "11px"
-} as const;
-
-const stepInactive = {
-  width: "24px",
-  height: "24px",
-  borderRadius: "50%",
-  backgroundColor: "#1f2937",
-  color: "#9ca3af",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: "11px"
-} as const;
+const pageStyle = { minHeight: "100vh", display: "flex", backgroundColor: "#ffffff", fontFamily: "'Urbanist', 'Inter', sans-serif" } as const;
+const sidebarStyle = { width: "260px", backgroundColor: "#fafafa", borderRight: "1px solid #e5e7eb", padding: "24px", zIndex: 10 } as const;
+const mainStyle = { flex: 1, padding: "48px 64px", overflowY: "auto" as const, backgroundColor: "#ffffff" } as const;
+const stepActive = { width: "24px", height: "24px", borderRadius: "50%", backgroundColor: "#2563eb", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "700", fontSize: "12px" } as const;
+const stepInactive = { width: "24px", height: "24px", borderRadius: "50%", backgroundColor: "#f3f4f6", color: "#9ca3af", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "600", fontSize: "12px" } as const;
+const dropZoneStyle = { border: "2px dashed #d1d5db", borderRadius: "16px", padding: "48px 20px", backgroundColor: "#fafafa", cursor: "pointer", marginBottom: "24px", transition: "all 0.2s ease" };
+const uploadButtonStyle = { width: "100%", padding: "16px", borderRadius: "12px", border: "none", fontWeight: "700", fontSize: "15px", transition: "all 0.2s ease" };
+const primaryButtonStyle = { backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "8px", padding: "12px 16px", fontWeight: "600", cursor: "pointer", boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)" };

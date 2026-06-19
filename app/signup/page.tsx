@@ -60,14 +60,15 @@ export default function SignupPage() {
 
   return (
     <main style={pageWrapperStyle}>
-      {/* Top Header Layer to match Landing Page Navigation */}
+      {/* Top Header Layer to match Landing/Login Page Navigation */}
       <header style={headerStyle}>
-        <div style={{ fontSize: "15px", fontWeight: "bold", letterSpacing: "0.5px" }}>
+        <div style={{ fontSize: "16px", fontWeight: "bold", letterSpacing: "0.5px", color: "#111827" }}>
           NotesTaker AI
         </div>
-        <div style={{ display: "flex", gap: "24px", fontSize: "13px", color: "#9ca3af", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "24px", fontSize: "13px", color: "#6b7280", alignItems: "center" }}>
           <Link href="/#features" style={headerLinkStyle}>Product</Link>
-          <Link href="/#features" style={headerLinkStyle}>Docs</Link>
+          <Link href="/about" style={headerLinkStyle}>About</Link>
+          <Link href="/contact" style={headerLinkStyle}>Contact</Link>
           <Link href="/#pricing" style={headerLinkStyle}>Pricing</Link>
         </div>
         <div style={{ display: "flex", gap: "16px", fontSize: "13px", alignItems: "center" }}>
@@ -82,8 +83,8 @@ export default function SignupPage() {
       <section style={cardSectionStyle}>
         <div style={cardFormWrapperStyle}>
           <div style={{ textAlign: "center", marginBottom: "28px" }}>
-            <h1 style={{ fontSize: "28px", fontWeight: "600", margin: "0 0 6px 0", letterSpacing: "-0.5px" }}>Sign Up</h1>
-            <p style={{ color: "#71717a", fontSize: "14px", margin: 0 }}>Create notes in minutes. No credit card required.</p>
+            <h1 style={{ fontSize: "28px", fontWeight: "700", margin: "0 0 6px 0", letterSpacing: "-0.5px", color: "#111827" }}>Sign Up</h1>
+            <p style={{ color: "#6b7280", fontSize: "14px", margin: 0 }}>Create notes in minutes. No credit card required.</p>
           </div>
 
           {errorMessage && (
@@ -105,7 +106,7 @@ export default function SignupPage() {
 
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
             <div style={dividerStyle} />
-            <span style={{ color: "#3f3f46", fontSize: "12px", fontWeight: "600" }}>OR</span>
+            <span style={{ color: "#9ca3af", fontSize: "12px", fontWeight: "600" }}>OR</span>
             <div style={dividerStyle} />
           </div>
 
@@ -171,7 +172,7 @@ export default function SignupPage() {
 
           <p style={bottomRedirectTextStyle}>
             Already have an account?{" "}
-            <Link href="/login" style={{ color: "white", textDecoration: "underline" }}>
+            <Link href="/login" style={{ color: "#2563eb", textDecoration: "underline", fontWeight: "600" }}>
               Sign in
             </Link>
           </p>
@@ -181,21 +182,21 @@ export default function SignupPage() {
       {/* Fine Print Legal Footer Layer */}
       <footer style={footerStyle}>
         By creating or entering an account, you agree to the{" "}
-        <Link href="#" style={footerLinkStyle}>Terms of Service</Link> and{" "}
-        <Link href="#" style={footerLinkStyle}>Privacy Policy</Link>.
+        <Link href="/terms" style={footerLinkStyle}>Terms of Service</Link> and{" "}
+        <Link href="/privacy" style={footerLinkStyle}>Privacy Policy</Link>.
       </footer>
     </main>
   );
 }
 
-// --- Style Settings Mapping ---
+// --- Light Mode & Blue Design Tokens ---
 const pageWrapperStyle = {
   minHeight: "100vh",
   display: "flex",
   flexDirection: "column" as const,
-  backgroundColor: "#09090b",
-  color: "white",
-  fontFamily: "'Urbanist', sans-serif"
+  backgroundColor: "#ffffff", // Pure white background
+  color: "#111827", // Dark text
+  fontFamily: "'Urbanist', 'Inter', sans-serif"
 };
 
 const headerStyle = {
@@ -203,19 +204,19 @@ const headerStyle = {
   justifyContent: "space-between",
   alignItems: "center",
   padding: "24px 64px",
-  backgroundColor: "transparent",
-  borderBottom: "1px solid rgba(255,255,255,0.02)"
+  backgroundColor: "#ffffff",
+  borderBottom: "1px solid #f3f4f6" // Light gray border
 };
 
 const headerLinkStyle = {
-  color: "#a1a1aa",
+  color: "#4b5563",
   textDecoration: "none",
   fontSize: "13px",
   fontWeight: "500"
 };
 
 const topSignUpButtonStyle = {
-  backgroundColor: "#8b5cf6",
+  backgroundColor: "#2563eb", // Professional Blue
   color: "white",
   border: "none",
   borderRadius: "8px",
@@ -230,17 +231,18 @@ const cardSectionStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  padding: "40px 24px"
+  padding: "40px 24px",
+  backgroundColor: "#fafafa" // Subtle off-white background behind card
 };
 
 const cardFormWrapperStyle = {
   width: "100%",
   maxWidth: "440px",
-  backgroundColor: "rgba(9,9,11,0.6)",
-  border: "1px solid rgba(255,255,255,0.04)",
+  backgroundColor: "#ffffff",
+  border: "1px solid #e5e7eb", // Light gray border
   borderRadius: "16px",
   padding: "36px",
-  boxShadow: "0 20px 50px rgba(0,0,0,0.3)"
+  boxShadow: "0 10px 25px rgba(0,0,0,0.05)" // Soft shadow
 };
 
 const socialButtonStyle = {
@@ -250,10 +252,10 @@ const socialButtonStyle = {
   justifyContent: "center",
   gap: "12px",
   padding: "12px",
-  backgroundColor: "#18181b",
-  color: "#e4e4e7",
+  backgroundColor: "#ffffff",
+  color: "#374151",
   borderRadius: "10px",
-  border: "1px solid rgba(255,255,255,0.05)",
+  border: "1px solid #d1d5db", // Gray outline
   cursor: "pointer",
   fontWeight: "600",
   fontSize: "14px",
@@ -264,8 +266,8 @@ const socialIconWrapperStyle = {
   width: "20px",
   height: "20px",
   borderRadius: "4px",
-  backgroundColor: "white",
-  color: "black",
+  backgroundColor: "#f3f4f6", // Light gray box
+  color: "#111827",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -276,16 +278,16 @@ const socialIconWrapperStyle = {
 const dividerStyle = {
   flex: 1,
   height: "1px",
-  backgroundColor: "rgba(255,255,255,0.04)"
+  backgroundColor: "#e5e7eb"
 };
 
 const inputStyle = {
   width: "100%",
   padding: "11px 14px",
   borderRadius: "8px",
-  border: "1px solid rgba(255,255,255,0.08)",
-  backgroundColor: "#09090b",
-  color: "white",
+  border: "1px solid #d1d5db", // Gray border
+  backgroundColor: "#f9fafb", // Very light gray background
+  color: "#111827",
   fontSize: "14px",
   outline: "none"
 };
@@ -293,9 +295,9 @@ const inputStyle = {
 const labelStyle = {
   display: "block",
   marginBottom: "6px",
-  color: "#a1a1aa",
+  color: "#4b5563",
   fontSize: "12px",
-  fontWeight: "500"
+  fontWeight: "600"
 };
 
 const submitButtonStyle = {
@@ -303,7 +305,7 @@ const submitButtonStyle = {
   padding: "12px",
   borderRadius: "8px",
   border: "none",
-  background: "#8b5cf6",
+  background: "#2563eb", // Professional Blue
   color: "white",
   fontWeight: "600",
   cursor: "pointer",
@@ -313,20 +315,19 @@ const submitButtonStyle = {
 
 const errorContainerStyle = {
   color: "#ef4444",
-  removeAttribute: true,
   marginBottom: "16px",
   fontSize: "13px",
   padding: "10px",
-  backgroundColor: "rgba(239, 68, 68, 0.06)",
+  backgroundColor: "#fef2f2",
   borderRadius: "6px",
-  border: "1px solid rgba(239, 68, 68, 0.15)",
+  border: "1px solid #fecaca",
   textAlign: "center" as const
 };
 
 const bottomRedirectTextStyle = {
   textAlign: "center" as const,
   marginTop: "24px",
-  color: "#71717a",
+  color: "#6b7280",
   fontSize: "13px",
   marginBottom: 0
 };
@@ -334,12 +335,12 @@ const bottomRedirectTextStyle = {
 const footerStyle = {
   padding: "24px",
   textAlign: "center" as const,
-  color: "#3f3f46",
+  color: "#9ca3af",
   fontSize: "11px",
-  borderTop: "1px solid rgba(255,255,255,0.01)"
+  borderTop: "1px solid #f3f4f6"
 };
 
 const footerLinkStyle = {
-  color: "#71717a",
+  color: "#6b7280",
   textDecoration: "underline"
 };

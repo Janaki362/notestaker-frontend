@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Study Platform",
-  description: "Frontend demo for AI Study Platform",
+  title: "NotesTaker AI | Enterprise Study Workspace",
+  description: "Transform chaotic source material into structured knowledge with NotesTaker AI.",
 };
 
 export default function RootLayout({

@@ -1,557 +1,390 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore"; 
+import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
-type Flashcard = { question: string; answer: string; };
-type Definition = { term: string; meaning: string; };
-type QuizQuestion = { question: string; options: string[]; answer: string; };
-type AIResults = {
-  summary: string;
-  keyConcepts: string[];
-  definitions: Definition[];
-  examples: string[];
-  flashcards: Flashcard[];
-  quiz: QuizQuestion[];
+const FlashcardItem = ({ card, idx }: { card: any, idx: number }) => {
+  const [isFlipped, setIsFlipped] = useState(false);
+  return (
+    <div onClick={() => setIsFlipped(!isFlipped)} style={{ perspective: "1000px", height: "260px", cursor: "pointer" }}>
+      <div style={{ position: "relative", width: "100%", height: "100%", textAlign: "center", transition: "transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1)", transformStyle: "preserve-3d", transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
+        <div style={{ position: "absolute", width: "100%", height: "100%", backfaceVisibility: "hidden", backgroundColor: "#ffffff", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "32px 24px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)" }}>
+          <p style={{ fontWeight: "700", color: "#2563eb", marginBottom: "16px", fontSize: "14px" }}>Flashcard {idx + 1}</p>
+          <h3 style={{ fontSize: "18px", margin: "0 0 16px 0", color: "#111827", lineHeight: "1.5" }}>{card.question || card.front}</h3>
+          <p style={{ marginTop: "auto", fontSize: "13px", color: "#9ca3af", fontWeight: "500" }}>Click to flip ↺</p>
+        </div>
+        <div style={{ position: "absolute", width: "100%", height: "100%", backfaceVisibility: "hidden", backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "12px", padding: "32px 24px", display: "flex", flexDirection: "column", justifyContent: "center", transform: "rotateY(180deg)", boxShadow: "0 10px 15px -3px rgba(37, 99, 235, 0.1)" }}>
+          <p style={{ fontWeight: "700", color: "#2563eb", marginBottom: "16px", fontSize: "14px" }}>Answer</p>
+          <div style={{ color: "#1e3a8a", fontSize: "16px", lineHeight: "1.6", fontWeight: "500", overflowY: "auto" }}>{card.answer || card.back}</div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
-type ChatMessage = { role: "user" | "ai"; content: string };
-
-function ResultsContent() {
+export default function ResultsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const dbId = searchParams.get("id");
 
-  const [results, setResults] = useState<AIResults | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"Notes" | "Flashcards" | "Quiz">("Notes");
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState("");
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [results, setResults] = useState<any>(null);
+  const [fileName, setFileName] = useState("Document Analysis");
+  const [activeTab, setActiveTab] = useState("summary");
+  const [userName, setUserName] = useState("User");
 
-  // Flashcard State
-  const [showAnswer, setShowAnswer] = useState(false);
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
-
-  // Quiz State
-  const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
+  // Quiz States
   const [quizAnswers, setQuizAnswers] = useState<Record<number, string>>({});
-  const [score, setScore] = useState(0); 
-  const [isQuizFinished, setIsQuizFinished] = useState(false); // NEW: Controls the frosted glass score modal overlay
+  const [isQuizSubmitted, setIsQuizSubmitted] = useState(false);
+  const [showScoreModal, setShowScoreModal] = useState(false);
 
-  // Chatbot State
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { role: "ai", content: "Hi! I've analyzed your notes. What would you like to know?" }
-  ]);
-  const [chatInput, setChatInput] = useState("");
+  const [messages, setMessages] = useState<{ sender: "user" | "ai"; text: any }>([{ 
+    sender: "ai", 
+    text: (
+      <div>
+        <p style={{ margin: "0 0 12px 0" }}>I've analyzed this document.</p>
+        <p style={{ margin: "0 0 8px 0", fontWeight: "600", color: "#374151" }}>Try asking:</p>
+        <ul style={{ margin: 0, paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "6px", color: "#4b5563" }}>
+          <li>Summarize the main topics</li>
+          <li>Generate study tips</li>
+          <li>Explain Zero Trust Architecture</li>
+        </ul>
+      </div>
+    )
+  }]);
+  const [inputMessage, setInputMessage] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [sessionId] = useState(() => Math.random().toString(36).substring(2, 15));
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        setUserName(currentUser.displayName || currentUser.email || "User");
+      } else router.push("/login");
+    });
+    return () => unsubscribe();
+  }, [router]);
 
   useEffect(() => {
+    if (!user) return;
+    const fetchLatest = async () => {
+      try {
+        const q = query(collection(db, "studySets"), where("userId", "==", user.uid), orderBy("createdAt", "desc"), limit(1));
+        const snap = await getDocs(q);
+        return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+      } catch (e) { return null; }
+    };
+
     const loadData = async () => {
-      if (dbId) {
+      setLoading(true);
+      let dataToRender = null;
+      if (dbId && dbId !== "undefined") {
         try {
           const docRef = doc(db, "studySets", dbId);
           const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const fetchedData = docSnap.data();
-            setResults(fetchedData.data);
-            setFileName(fetchedData.fileName);
-          }
-        } catch (error) {
-          console.error("Error fetching document:", error);
-        }
-      } else {
-        const storedResults = localStorage.getItem("aiResults");
-        if (storedResults) setResults(JSON.parse(storedResults));
-
-        const storedFile = localStorage.getItem("uploadedFile");
-        if (storedFile) {
-          const parsedFile = JSON.parse(storedFile);
-          setFileName(parsedFile.name);
-        }
+          if (docSnap.exists()) dataToRender = docSnap.data();
+        } catch (error) {}
       }
+      if (!dataToRender) {
+        const latest = await fetchLatest();
+        if (latest) dataToRender = latest;
+      }
+      if (dataToRender) {
+        setResults(dataToRender.data || dataToRender);
+        setFileName(dataToRender.fileName || "Document Analysis");
+      }
+      setLoading(false);
     };
     loadData();
-  }, [dbId]);
+  }, [user, dbId]);
 
-  const handleSaveToCloud = async () => {
-    if (!auth.currentUser || !results) {
-      setSaveMessage("Error: Please log in first.");
-      return;
-    }
-    try {
-      setIsSaving(true);
-      setSaveMessage("");
-      await addDoc(collection(db, "studySets"), {
-        userId: auth.currentUser.uid,
-        fileName: fileName || "Untitled Document",
-        data: results,
-        createdAt: serverTimestamp(),
-      });
-      setSaveMessage("Saved to Dashboard!");
-    } catch (error) {
-      console.error("Error saving document: ", error);
-      setSaveMessage("Failed to save.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleAnswerSelect = (option: string) => {
-    if (quizAnswers[currentQuizIndex]) return;
-
-    setQuizAnswers(prev => ({ ...prev, [currentQuizIndex]: option }));
-
-    if (results && results.quiz[currentQuizIndex]) {
-      const isCorrect = option === results.quiz[currentQuizIndex].answer;
-      if (isCorrect) {
-        setScore(prev => prev + 1);
-      }
-    }
-  };
-
-  // NEW: Reset method if they want to re-try the quiz on the fly during the demo
-  const handleResetQuiz = () => {
-    setQuizAnswers({});
-    setScore(0);
-    setCurrentQuizIndex(0);
-    setIsQuizFinished(false);
-  };
-
-  const handleChatSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-
-    const userMessage = chatInput.trim();
-    const newMessages: ChatMessage[] = [...chatMessages, { role: "user", content: userMessage }];
-    setChatMessages(newMessages);
-    setChatInput("");
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!inputMessage.trim() || isChatLoading) return;
+    const userText = inputMessage.trim();
+    setMessages((prev) => [...prev, { sender: "user", text: userText }]);
+    setInputMessage("");
     setIsChatLoading(true);
 
-    setTimeout(() => {
-      let mockReply = "I've analyzed your document, but I couldn't find a specific section matching that question. Could you rephrase?";
-      const lowerMessage = userMessage.toLowerCase();
-
-      if (lowerMessage.includes("data protection")) {
-        mockReply = "According to your notes, Data Protection involves safeguarding critical information from corruption, compromise, or loss. It ensures data privacy and structural compliance across network environments.";
-      } else if (lowerMessage.includes("cloud security")) {
-        mockReply = "Based on the uploaded summary, Cloud Security refers to the broad set of policies, technologies, applications, and controls deployed to protect virtualized data and its associated cloud infrastructure.";
-      } else if (lowerMessage === "yes" || lowerMessage.includes("more details") || lowerMessage.includes("detail")) {
-        mockReply = "Certainly! The document emphasizes utilizing targeted micro-segmentation configurations and strict firewall access boundaries as primary strategies to achieve this level of isolation.";
-      }
-
-      setChatMessages([...newMessages, { role: "ai", content: mockReply }]);
+    try {
+      const res = await fetch("https://notestaker-backend-194267172594.us-central1.run.app/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userText, documentContext: results?.summary || "", sessionId }),
+      });
+      if (!res.ok) throw new Error("Failed to get response");
+      const data = await res.json();
+      setMessages((prev) => [...prev, { sender: "ai", text: data.answer }]);
+    } catch (error) {
+      setMessages((prev) => [...prev, { sender: "ai", text: "⚠️ Trouble connecting to server." }]);
+    } finally {
       setIsChatLoading(false);
-    }, 1000);
+    }
   };
 
-  if (!results) {
-    return (
-      <main style={pageStyle}>
-        <aside style={sidebarStyle}><Sidebar /></aside>
-        <section style={mainStyle}>
-          <div style={emptyCardStyle}>
-            <h1>No Results Yet</h1>
-            <p style={{ color: "#9ca3af", marginBottom: "20px" }}>Please upload a document first.</p>
-            <Link href="/upload" style={{ textDecoration: "none" }}>
-              <button style={purpleButtonStyle}>Go to Upload</button>
-            </Link>
-          </div>
-        </section>
-      </main>
-    );
-  }
+  const handleOptionSelect = (questionIndex: number, option: string) => {
+    if (isQuizSubmitted) return;
+    setQuizAnswers(prev => ({ ...prev, [questionIndex]: option }));
+  };
 
-  const currentQuiz = results.quiz?.[currentQuizIndex];
-  const selectedAnswer = quizAnswers[currentQuizIndex];
+  const renderTabContent = () => {
+    if (!results) return null;
 
-  return (
-    <main style={pageStyle}>
-      <style dangerouslySetInnerHTML={{
-        __html: `
-        .interactive-card:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(139, 92, 246, 0.15); border-color: rgba(139, 92, 246, 0.4) !important; }
-        .quiz-option:hover { background-color: rgba(139, 92, 246, 0.08) !important; border-color: rgba(139, 92, 246, 0.5) !important; }
-        .chat-scroll::-webkit-scrollbar { width: 6px; }
-        .chat-scroll::-webkit-scrollbar-thumb { background-color: #374151; border-radius: 10px; }
-      `}} />
-
-      <aside style={sidebarStyle}><Sidebar /></aside>
-
-      <section style={mainStyle}>
-        {/* --- DYNAMIC TRANSITION FROSTED GLASS MODAL --- */}
-        {activeTab === "Quiz" && isQuizFinished && (
-          <div style={modalOverlayBlurStyle}>
-            <div style={modalCardStyle}>
-              <div style={modalIconCircleStyle}>🎓</div>
-              <h2 style={{ fontSize: "28px", fontWeight: "700", margin: "0 0 8px 0", letterSpacing: "-0.5px" }}>Quiz Completed!</h2>
-              <p style={{ color: "#9ca3af", fontSize: "14px", margin: "0 0 28px 0" }}>Great effort! Here is your deep focus performance breakdown.</p>
-              
-              <div style={scoreMetricBoxStyle}>
-                <div style={{ fontSize: "12px", fontWeight: "600", color: "#a78bfa", letterSpacing: "1px", marginBottom: "4px" }}>TOTAL ACCURACY</div>
-                <div style={{ fontSize: "48px", fontWeight: "800", color: "white" }}>
-                  {score} <span style={{ color: "#4b5563", fontSize: "24px", fontWeight: "400" }}>/ {results.quiz.length}</span>
-                </div>
-                <div style={{ fontSize: "13px", color: "#9ca3af", marginTop: "8px" }}>
-                  Percentage Score: <b>{Math.round((score / results.quiz.length) * 100)}%</b>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: "14px", justifyContent: "center" }}>
-                <button onClick={handleResetQuiz} style={secondaryButtonStyle}>
-                  🔄 Try Again
-                </button>
-                <Link href="/dashboard" style={{ textDecoration: "none" }}>
-                  <button style={purpleButtonStyle}>
-                    ▦ Go to Dashboard
-                  </button>
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <header style={topBarStyle}>
-          <div>
-            <p style={{ color: "#9ca3af", margin: 0 }}>Notes Editor</p>
-            <h1 style={{ margin: "6px 0 8px", fontSize: "28px" }}>AI Generated Study Notes</h1>
-            {fileName && (
-              <span style={{ backgroundColor: "rgba(139, 92, 246, 0.15)", color: "#c4b5fd", padding: "4px 10px", borderRadius: "6px", fontSize: "13px", border: "1px solid rgba(139, 92, 246, 0.3)" }}>
-                📄 Source: {fileName}
-              </span>
-            )}
-          </div>
-          
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            {saveMessage && (
-              <span style={{ color: saveMessage.includes("Failed") || saveMessage.includes("Error") ? "#ef4444" : "#10b981", fontSize: "14px", fontWeight: "500" }}>
-                {saveMessage}
-              </span>
-            )}
-            <button onClick={handleSaveToCloud} disabled={isSaving} style={{ ...purpleButtonStyle, opacity: isSaving ? 0.7 : 1, cursor: isSaving ? "not-allowed" : "pointer" }}>
-              {isSaving ? "Saving..." : "Save to Dashboard"}
-            </button>
-          </div>
-        </header>
-
-        <div style={tabsStyle}>
-          <span onClick={() => setActiveTab("Notes")} style={activeTab === "Notes" ? activeTabStyle : inactiveTabStyle}>Notes</span>
-          <span onClick={() => setActiveTab("Flashcards")} style={activeTab === "Flashcards" ? activeTabStyle : inactiveTabStyle}>Flashcards</span>
-          <span onClick={() => setActiveTab("Quiz")} style={activeTab === "Quiz" ? activeTabStyle : inactiveTabStyle}>Quiz</span>
+    if (activeTab === "summary") {
+      return (
+        <div style={cardStyle}>
+          <h2 style={{ fontSize: "20px", fontWeight: "700", marginBottom: "16px" }}>Summary</h2>
+          <p style={{ lineHeight: "1.7", color: "#374151" }}>{results.summary || "No summary available."}</p>
         </div>
+      );
+    }
 
-        {/* --- NOTES TAB --- */}
-        {activeTab === "Notes" && (
-          <div style={contentGridStyle}>
-            <div style={notesPanelStyle}>
-              <section style={resultCardStyle}>
-                <h2>Summary</h2>
-                <p style={paragraphStyle}>{results.summary}</p>
-              </section>
-
-              <section style={resultCardStyle}>
-                <h2 style={{ marginBottom: "16px" }}>Key Concepts</h2>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-                  {results.keyConcepts?.map((concept, index) => (
-                    <span key={index} style={chipStyle}>{concept}</span>
-                  ))}
-                </div>
-              </section>
-
-              <section style={resultCardStyle}>
-                <h2>Definitions</h2>
-                {results.definitions?.map((item, index) => (
-                  <p key={index} style={{...paragraphStyle, marginBottom: "12px"}}>
-                    <b style={{ color: "#c4b5fd" }}>{item.term}:</b> {item.meaning}
-                  </p>
-                ))}
-              </section>
+    if (activeTab === "keyConcepts") {
+      const concepts = results.keyConcepts || [];
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {concepts.length > 0 ? concepts.map((concept: any, idx: number) => (
+            <div key={idx} style={cardStyle}>
+              <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>{concept.term || concept.title}</h3>
+              <p style={{ margin: 0, color: "#4b5563", lineHeight: "1.6" }}>{concept.definition || concept.description}</p>
             </div>
+          )) : <div style={cardStyle}>No key concepts extracted.</div>}
+        </div>
+      );
+    }
 
-            {/* Chatbot Column */}
-            <div style={{ display: "flex", flexDirection: "column", backgroundColor: "rgba(17,24,39,0.75)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "18px", height: "calc(100vh - 220px)", overflow: "hidden" }}>
-              <div style={{ padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)", backgroundColor: "rgba(31,41,55,0.8)" }}>
-                <h3 style={{ margin: 0, fontSize: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span>✨</span> Chat with Notes
-                </h3>
-              </div>
+    if (activeTab === "flashcards") {
+      const cards = results.flashcards || [];
+      return (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+          {cards.length > 0 ? cards.map((card: any, idx: number) => <FlashcardItem key={idx} card={card} idx={idx} />) : <div style={cardStyle}>No flashcards generated.</div>}
+        </div>
+      );
+    }
 
-              <div className="chat-scroll" style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                {chatMessages.map((msg, idx) => (
-                  <div key={idx} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
-                    <div style={{
-                      maxWidth: "85%", padding: "12px 16px", borderRadius: "14px", fontSize: "14px", lineHeight: "1.5",
-                      backgroundColor: msg.role === "user" ? "#8b5cf6" : "rgba(31,41,55,0.9)", color: "white",
-                      borderBottomRightRadius: msg.role === "user" ? "4px" : "14px", borderBottomLeftRadius: msg.role === "ai" ? "4px" : "14px",
-                    }}>
-                      {msg.content}
-                    </div>
-                  </div>
-                ))}
-                {isChatLoading && (
-                  <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                    <div style={{ padding: "12px 16px", borderRadius: "14px", backgroundColor: "rgba(31,41,55,0.9)", color: "#9ca3af", fontSize: "14px" }}>
-                      Thinking...
-                    </div>
-                  </div>
-                )}
-                <div ref={chatEndRef} />
-              </div>
+    if (activeTab === "quiz") {
+      const questions = results.quiz || [];
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {questions.length > 0 ? questions.map((q: any, idx: number) => (
+            <div key={idx} style={cardStyle}>
+              <p style={{ fontWeight: "700", color: "#111827", marginBottom: "16px", fontSize: "16px" }}>{idx + 1}. {q.question}</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {(q.options || []).map((opt: string, oIdx: number) => {
+                  const isSelected = quizAnswers[idx] === opt;
+                  let bgColor = isSelected ? "#eff6ff" : "#f9fafb";
+                  let borderColor = isSelected ? "#2563eb" : "#e5e7eb";
+                  let textColor = isSelected ? "#1d4ed8" : "#374151";
 
-              <form onSubmit={handleChatSubmit} style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.08)", backgroundColor: "rgba(17,24,39,0.9)" }}>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    placeholder="Ask a question about your notes..."
-                    style={{ flex: 1, padding: "12px 16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.1)", backgroundColor: "#111827", color: "white", outline: "none", fontSize: "14px" }}
-                  />
-                  <button type="submit" disabled={!chatInput.trim()} style={{ ...purpleButtonStyle, padding: "10px 16px", opacity: !chatInput.trim() ? 0.5 : 1 }}>
-                    Send
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* --- FLASHCARDS TAB --- */}
-        {activeTab === "Flashcards" && (
-          <div style={{ maxWidth: "700px", margin: "0 auto", textAlign: "center", paddingTop: "20px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", color: "#9ca3af" }}>
-              <span>Progress</span>
-              <span>Card {currentCardIndex + 1} of {results.flashcards.length}</span>
-            </div>
-            
-            <section className="interactive-card" onClick={() => setShowAnswer(!showAnswer)} style={{ ...flashcardStyle, minHeight: "350px", transition: "all 0.2s ease" }}>
-              <p style={{ color: "#a78bfa", fontSize: "14px", letterSpacing: "2px" }}>{showAnswer ? "ANSWER" : "QUESTION"}</p>
-              {!showAnswer ? (
-                <h2 style={{ fontSize: "28px", padding: "0 20px" }}>{results.flashcards[currentCardIndex].question}</h2>
-              ) : (
-                <p style={{ ...paragraphStyle, fontSize: "20px", padding: "0 20px" }}>{results.flashcards[currentCardIndex].answer}</p>
-              )}
-              <p style={{ color: "#6b7280", fontSize: "14px", marginTop: "auto" }}>Click anywhere on card to flip</p>
-            </section>
-
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "30px" }}>
-              <button disabled={currentCardIndex === 0} onClick={() => { setCurrentCardIndex(prev => prev - 1); setShowAnswer(false); }} style={secondaryButtonStyle}>← Previous</button>
-              <button disabled={currentCardIndex === results.flashcards.length - 1} onClick={() => { setCurrentCardIndex(prev => prev + 1); setShowAnswer(false); }} style={secondaryButtonStyle}>Next Card →</button>
-            </div>
-          </div>
-        )}
-
-        {/* --- QUIZ TAB --- */}
-        {activeTab === "Quiz" && currentQuiz && (
-          <div style={{ maxWidth: "700px", margin: "0 auto", paddingTop: "20px" }}>
-             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", color: "#9ca3af" }}>
-              <span>Question {currentQuizIndex + 1} of {results.quiz.length}</span>
-              <span>Score: {score} / {results.quiz.length}</span>
-            </div>
-
-            <section style={{...quizCardStyle, padding: "40px"}}>
-              <h2 style={{ fontSize: "22px", marginBottom: "24px" }}>{currentQuiz.question}</h2>
-
-              <div style={{ display: "grid", gap: "12px" }}>
-                {currentQuiz.options.map((option) => {
-                  const isSelected = selectedAnswer === option;
-                  const isCorrect = option === currentQuiz.answer;
-                  const showFeedback = !!selectedAnswer;
-
+                  if (isQuizSubmitted) {
+                    const isCorrect = q.answer === opt || q.correctAnswer === opt;
+                    if (isCorrect) { bgColor = "#ecfdf5"; borderColor = "#10b981"; textColor = "#065f46"; } 
+                    else if (isSelected && !isCorrect) { bgColor = "#fef2f2"; borderColor = "#ef4444"; textColor = "#991b1b"; }
+                  }
                   return (
-                    <button
-                      key={option}
-                      className="quiz-option"
-                      onClick={() => !selectedAnswer && handleAnswerSelect(option)}
-                      style={{
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "16px 20px",
-                        borderRadius: "12px",
-                        fontSize: "15px",
-                        color: "white",
-                        outline: "none",
-                        border: showFeedback 
-                          ? (isCorrect ? "1px solid #22c55e" : (isSelected ? "1px solid #ef4444" : "1px solid rgba(255,255,255,0.08)")) 
-                          : (isSelected ? "1px solid #8b5cf6" : "1px solid rgba(255,255,255,0.08)"),
-                        backgroundColor: showFeedback 
-                          ? (isCorrect ? "rgba(34,197,94,0.12)" : (isSelected ? "rgba(239,68,68,0.12)" : "#111827")) 
-                          : (isSelected ? "rgba(139, 92, 246, 0.15)" : "#111827"),
-                        cursor: selectedAnswer ? "default" : "pointer", 
-                        transition: "all 0.2s ease"
-                      }}
+                    <div key={oIdx} onClick={() => handleOptionSelect(idx, opt)}
+                      style={{ padding: "14px 16px", border: `2px solid ${borderColor}`, borderRadius: "10px", backgroundColor: bgColor, color: textColor, cursor: isQuizSubmitted ? "default" : "pointer", fontWeight: isSelected ? "600" : "500", transition: "all 0.2s" }}
                     >
-                      {option}
-                    </button>
+                      {opt}
+                    </div>
                   );
                 })}
               </div>
+            </div>
+          )) : <div style={cardStyle}>No quiz questions generated.</div>}
+        </div>
+      );
+    }
+    return null;
+  };
 
-              {selectedAnswer && (
-                <div style={{ marginTop: "24px", padding: "16px", borderRadius: "12px", backgroundColor: selectedAnswer === currentQuiz.answer ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)" }}>
-                  <p style={{ color: selectedAnswer === currentQuiz.answer ? "#22c55e" : "#f87171", fontWeight: "bold", margin: "0 0 8px 0" }}>
-                    {selectedAnswer === currentQuiz.answer ? "✓ Correct!" : "✗ Incorrect"}
-                  </p>
-                  {selectedAnswer !== currentQuiz.answer && (
-                    <p style={{ color: "#d1d5db", margin: 0, fontSize: "14px" }}>The correct answer is: <b>{currentQuiz.answer}</b></p>
-                  )}
+  if (loading) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading your notes...</div>;
+
+  const totalQuestions = results?.quiz?.length || 0;
+  const answeredQuestions = Object.keys(quizAnswers).length;
+  const progressPercentage = totalQuestions === 0 ? 0 : Math.round((answeredQuestions / totalQuestions) * 100);
+
+  let score = 0;
+  if (isQuizSubmitted && totalQuestions > 0) {
+    results.quiz.forEach((q: any, idx: number) => {
+      if (quizAnswers[idx] === q.answer || quizAnswers[idx] === q.correctAnswer) score++;
+    });
+  }
+  
+  const scorePercentage = totalQuestions === 0 ? 0 : Math.round((score / totalQuestions) * 100);
+
+  return (
+    <main style={pageStyle}>
+      <aside style={sidebarStyle}>
+        <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+          <h2 style={{ margin: "0 0 24px", fontSize: "18px", color: "#111827", fontWeight: "700" }}>
+            <span style={{ color: "#2563eb", marginRight: "6px" }}>✦</span>NotesTaker AI
+          </h2>
+          <Link href="/upload" style={{ textDecoration: "none" }}><button style={primaryButtonStyle}>+ New Study Set</button></Link>
+          <nav style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "12px" }}>
+            {[{ name: "Dashboard", path: "/dashboard", icon: "▦" }, { name: "Folders", path: "/folders", icon: "📁" }, { name: "Settings", path: "/settings", icon: "⚙" }].map((item) => (
+              <Link key={item.name} href={item.path} style={{ textDecoration: "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 12px", borderRadius: "8px", color: "#4b5563", fontWeight: "500" }}>
+                  <span>{item.icon}</span><span>{item.name}</span>
                 </div>
-              )}
-            </section>
-
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "30px" }}>
-              <button disabled={currentQuizIndex === 0} onClick={() => setCurrentQuizIndex(prev => prev - 1)} style={secondaryButtonStyle}>← Previous</button>
-              
-              {currentQuizIndex === results.quiz.length - 1 ? (
-                /* FIXED: Triggers frosted glass display layout state on final completion node */
-                <button onClick={() => setIsQuizFinished(true)} style={purpleButtonStyle}>
-                  Finish Quiz
-                </button>
-              ) : (
-                <button onClick={() => setCurrentQuizIndex(prev => prev + 1)} style={secondaryButtonStyle}>
-                  Next Question →
-                </button>
-              )}
+              </Link>
+            ))}
+          </nav>
+          <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "20px", marginTop: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#111827", fontWeight: "600", fontSize: "14px" }}>
+              <span style={{ backgroundColor: "#e5e7eb", borderRadius: "50%", padding: "4px" }}>👤</span> {userName}
             </div>
           </div>
-        )}
+        </div>
+      </aside>
+
+      <section style={mainStyle}>
+        <div style={{ marginBottom: "32px" }}>
+          <h1 style={{ fontSize: "32px", margin: "0 0 8px 0", color: "#111827", fontWeight: "800" }}>{fileName}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#6b7280", fontSize: "14px", fontWeight: "500", marginTop: "12px" }}>
+            <span style={{ backgroundColor: "#eff6ff", color: "#2563eb", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "700" }}>Student Mode</span>
+            <span style={{ backgroundColor: "#f3f4f6", color: "#4b5563", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "700" }}>Vertex AI</span>
+            <span style={{ backgroundColor: "#ecfdf5", color: "#059669", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "700" }}>⚡ Cached</span>
+            <span style={{ marginLeft: "4px" }}>• Processed Successfully</span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "32px", alignItems: "flex-start" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", gap: "24px", borderBottom: "1px solid #e5e7eb", marginBottom: "32px" }}>
+              {[{ id: "summary", label: "Summary" }, { id: "keyConcepts", label: "Key Concepts" }, { id: "flashcards", label: "Flashcards" }, { id: "quiz", label: "Practice Quiz" }].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{ background: "none", padding: "0 0 12px 0", border: "none", borderBottom: activeTab === tab.id ? "2px solid #2563eb" : "2px solid transparent", color: activeTab === tab.id ? "#2563eb" : "#6b7280", cursor: "pointer", fontSize: "15px", fontWeight: "600" }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div>{renderTabContent()}</div>
+          </div>
+
+          {activeTab === "quiz" ? (
+            <div style={{ width: "350px", flexShrink: 0, backgroundColor: "#ffffff", border: "1px solid #e5e7eb", borderRadius: "16px", padding: "24px", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)", position: "sticky", top: "48px" }}>
+              <h3 style={{ margin: "0 0 24px 0", fontSize: "18px", color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}><span>🎯</span> Quiz Progress</h3>
+              <div style={{ marginBottom: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "14px", fontWeight: "600", color: "#4b5563" }}>
+                  <span>Questions Answered</span><span>{answeredQuestions} / {totalQuestions}</span>
+                </div>
+                <div style={{ width: "100%", backgroundColor: "#e5e7eb", borderRadius: "99px", height: "8px", overflow: "hidden" }}>
+                  <div style={{ width: `${progressPercentage}%`, backgroundColor: "#2563eb", height: "100%", transition: "width 0.3s ease" }}></div>
+                </div>
+              </div>
+              {isQuizSubmitted ? (
+                <div style={{ backgroundColor: "#f9fafb", padding: "20px", borderRadius: "12px", border: "1px solid #e5e7eb", textAlign: "center", marginBottom: "24px" }}>
+                  <p style={{ margin: "0 0 8px 0", fontSize: "14px", color: "#6b7280", fontWeight: "600" }}>Final Score</p>
+                  <p style={{ margin: 0, fontSize: "36px", fontWeight: "800", color: score === totalQuestions ? "#059669" : "#111827" }}>
+                    {score} <span style={{ fontSize: "20px", color: "#9ca3af" }}>/ {totalQuestions}</span>
+                  </p>
+                  <button onClick={() => setShowScoreModal(true)} style={{ marginTop: "16px", background: "none", border: "none", color: "#2563eb", fontSize: "14px", fontWeight: "600", cursor: "pointer" }}>View Score Details</button>
+                </div>
+              ) : (
+                <div style={{ marginBottom: "24px" }}>
+                  <p style={{ fontSize: "14px", color: "#6b7280", lineHeight: "1.5" }}>Test your knowledge without AI assistance. Submit to view your score.</p>
+                </div>
+              )}
+              <button 
+                onClick={() => { setIsQuizSubmitted(true); setShowScoreModal(true); }} 
+                disabled={isQuizSubmitted || answeredQuestions === 0} 
+                style={{ width: "100%", padding: "14px", borderRadius: "8px", border: "none", backgroundColor: isQuizSubmitted || answeredQuestions === 0 ? "#e5e7eb" : "#2563eb", color: isQuizSubmitted || answeredQuestions === 0 ? "#9ca3af" : "#ffffff", fontWeight: "700", cursor: isQuizSubmitted || answeredQuestions === 0 ? "default" : "pointer", transition: "all 0.2s" }}
+              >
+                {isQuizSubmitted ? "Quiz Submitted" : "Submit Quiz"}
+              </button>
+            </div>
+          ) : (
+            <div style={{ width: "350px", flexShrink: 0, backgroundColor: "#ffffff", border: "1px solid #e5e7eb", borderRadius: "16px", display: "flex", flexDirection: "column", height: "600px", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)", position: "sticky", top: "48px" }}>
+              <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb", backgroundColor: "#fafafa", borderRadius: "16px 16px 0 0" }}>
+                <h3 style={{ margin: 0, fontSize: "16px", color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontSize: "18px" }}>✨</span> Ask AI Assistant</h3>
+              </div>
+              <div style={{ flex: 1, padding: "20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "16px" }}>
+                {messages.map((msg, index) => (
+                  <div key={index} style={{ display: "flex", justifyContent: msg.sender === "user" ? "flex-end" : "flex-start" }}>
+                    <div style={{ padding: "10px 16px", borderRadius: msg.sender === "user" ? "16px 16px 0px 16px" : "16px 16px 16px 0px", backgroundColor: msg.sender === "user" ? "#2563eb" : "#f3f4f6", color: msg.sender === "user" ? "#ffffff" : "#1f2937", maxWidth: "85%", fontSize: "14px", lineHeight: "1.5", border: msg.sender === "ai" ? "1px solid #e5e7eb" : "none" }}>{msg.text}</div>
+                  </div>
+                ))}
+                {isChatLoading && <div style={{ display: "flex", justifyContent: "flex-start" }}><div style={{ padding: "10px 16px", borderRadius: "16px 16px 16px 0px", backgroundColor: "#f3f4f6", color: "#6b7280", fontStyle: "italic", fontSize: "14px", border: "1px solid #e5e7eb" }}>AI is thinking...</div></div>}
+                <div ref={messagesEndRef} />
+              </div>
+              <form onSubmit={handleSendMessage} style={{ display: "flex", padding: "16px", borderTop: "1px solid #e5e7eb", backgroundColor: "#fafafa", gap: "12px", borderRadius: "0 0 16px 16px" }}>
+                <input type="text" value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} placeholder="Ask a question..." disabled={isChatLoading} style={{ flex: 1, padding: "10px 16px", borderRadius: "99px", border: "1px solid #d1d5db", outline: "none", fontSize: "14px", minWidth: 0 }} />
+                <button type="submit" disabled={!inputMessage.trim() || isChatLoading} style={{ backgroundColor: "#2563eb", color: "#ffffff", border: "none", borderRadius: "99px", padding: "0 20px", fontWeight: "600", cursor: "pointer", opacity: !inputMessage.trim() || isChatLoading ? 0.5 : 1 }}>Send</button>
+              </form>
+            </div>
+          )}
+        </div>
       </section>
+
+      {/* --- LIGHT MODE QUIZ COMPLETION MODAL --- */}
+      {showScoreModal && (
+        <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(17, 24, 39, 0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div style={{ position: "relative", backgroundColor: "#ffffff", color: "#111827", borderRadius: "24px", padding: "40px", width: "100%", maxWidth: "420px", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)", border: "1px solid #e5e7eb" }}>
+            
+            {/* Close X Button */}
+            <button onClick={() => setShowScoreModal(false)} style={{ position: "absolute", top: "20px", right: "20px", background: "none", border: "none", color: "#9ca3af", fontSize: "20px", cursor: "pointer", padding: "4px" }}>✕</button>
+
+            <div style={{ fontSize: "40px", marginBottom: "16px", display: "inline-flex", padding: "16px", backgroundColor: "#eff6ff", borderRadius: "50%", border: "1px solid #bfdbfe" }}>🎓</div>
+            
+            <h2 style={{ fontSize: "28px", fontWeight: "800", marginBottom: "8px", color: "#111827" }}>Quiz Completed!</h2>
+            <p style={{ color: "#6b7280", fontSize: "15px", marginBottom: "32px", lineHeight: "1.5" }}>Great effort! Here is your performance breakdown.</p>
+
+            {/* Score Display Box */}
+            <div style={{ backgroundColor: "#f9fafb", borderRadius: "16px", padding: "32px 20px", marginBottom: "32px", border: "1px solid #e5e7eb" }}>
+              <p style={{ color: "#2563eb", fontSize: "12px", fontWeight: "700", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "12px" }}>Total Accuracy</p>
+              <div style={{ fontSize: "48px", fontWeight: "800", display: "flex", alignItems: "baseline", justifyContent: "center", gap: "8px", color: "#111827" }}>
+                {score} <span style={{ fontSize: "24px", color: "#9ca3af" }}>/ {totalQuestions}</span>
+              </div>
+              <p style={{ color: "#4b5563", fontSize: "14px", marginTop: "12px", fontWeight: "500" }}>Percentage Score: {scorePercentage}%</p>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button 
+                onClick={() => { setIsQuizSubmitted(false); setQuizAnswers({}); setShowScoreModal(false); }} 
+                style={{ flex: 1, padding: "14px", borderRadius: "12px", backgroundColor: "#ffffff", border: "1px solid #d1d5db", color: "#374151", fontWeight: "600", cursor: "pointer", transition: "all 0.2s" }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#ffffff"}
+              >
+                ↻ Try Again
+              </button>
+              <button 
+                onClick={() => router.push("/dashboard")} 
+                style={{ flex: 1, padding: "14px", borderRadius: "12px", backgroundColor: "#2563eb", border: "none", color: "#ffffff", fontWeight: "600", cursor: "pointer", boxShadow: "0 4px 14px 0 rgba(37, 99, 235, 0.3)", transition: "all 0.2s" }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-1px)"}
+                onMouseLeave={(e) => e.currentTarget.style.transform = "none"}
+              >
+                Go to Dashboard
+              </button>
+            </div>
+            
+            <p style={{ margin: "20px 0 0 0", fontSize: "13px" }}>
+              <button onClick={() => setShowScoreModal(false)} style={{ background: "none", border: "none", color: "#6b7280", textDecoration: "underline", cursor: "pointer" }}>Close & Review Answers</button>
+            </p>
+
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
 
-function Sidebar() {
-  const pathname = usePathname();
-  const [userName, setUserName] = useState("User");
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) setUserName(user.displayName || user.email || "User");
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const navItems = [
-    { name: "Dashboard", path: "/dashboard", icon: "▦" },
-    { name: "Folders", path: "/folders", icon: "📁" },
-    { name: "Settings", path: "/settings", icon: "⚙" },
-  ];
-
-  return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <div>
-        <h2 style={{ margin: "0 0 24px", fontSize: "18px" }}>✦ NotesTaker AI</h2>
-        <Link href="/upload" style={{ textDecoration: "none" }}>
-          <button style={{ ...purpleButtonStyle, width: "100%", marginBottom: "24px" }}>+ New Study Set</button>
-        </Link>
-        <nav style={navStyle}>
-          {navItems.map((item) => {
-            const isActive = pathname === item.path;
-            return (
-              <Link key={item.name} href={item.path} style={{ textDecoration: "none" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", borderRadius: "8px", color: isActive ? "white" : "#cbd5e1", backgroundColor: isActive ? "rgba(255,255,255,0.1)" : "transparent", cursor: "pointer" }}>
-                  <span>{item.icon}</span><span>{item.name}</span>
-                </div>
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
-      <div style={{ ...profileStyle, marginTop: "auto" }}>
-        <p style={{ margin: 0 }}>👤 {userName}</p>
-        <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#6b7280" }}>AI Study Workspace</p>
-      </div>
-    </div>
-  );
-}
-
-export default function ResultsPage() {
-  return (
-    <Suspense fallback={
-      <main style={{ minHeight: "100vh", display: "flex", backgroundColor: "#050816", color: "white", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ fontSize: "18px", color: "#a78bfa", fontWeight: "600", marginBottom: "8px" }}>✦ NotesTaker AI</p>
-          <p style={{ color: "#9ca3af", fontSize: "14px" }}>Loading workspace configuration...</p>
-        </div>
-      </main>
-    }>
-      <ResultsContent />
-    </Suspense>
-  );
-}
-
-// --- High Fidelity Design Architecture Tokens ---
-const pageStyle = { minHeight: "100vh", display: "flex", background: "linear-gradient(to bottom right, #050816, #0b1023)", color: "white" } as const;
-const sidebarStyle = { width: "250px", backgroundColor: "#11131a", borderRight: "1px solid rgba(255,255,255,0.08)", padding: "24px 18px", zIndex: 10 } as const;
-const mainStyle = { flex: 1, padding: "32px", overflowY: "auto" } as const;
-const topBarStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "28px" } as const;
-const contentGridStyle = { display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px" } as const;
-const notesPanelStyle = { backgroundColor: "rgba(17,24,39,0.75)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "18px", padding: "24px" } as const;
-const tabsStyle = { display: "flex", gap: "24px", borderBottom: "1px solid #374151", paddingBottom: "14px", marginBottom: "24px" } as const;
-const activeTabStyle = { color: "#c4b5fd", borderBottom: "2px solid #8b5cf6", paddingBottom: "14px", cursor: "pointer", fontWeight: "bold", marginBottom: "-15px" } as const;
-const inactiveTabStyle = { color: "#9ca3af", cursor: "pointer", paddingBottom: "14px", marginBottom: "-15px", transition: "color 0.2s" } as const;
-const resultCardStyle = { backgroundColor: "rgba(31,41,55,0.8)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px", padding: "20px", marginBottom: "18px" } as const;
-const flashcardStyle = { background: "linear-gradient(to bottom right, rgba(31,41,55,0.95), rgba(17,24,39,0.95))", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "18px", padding: "34px", textAlign: "center", cursor: "pointer", display: "flex", flexDirection: "column", justifyContent: "space-between" } as const;
-const quizCardStyle = { backgroundColor: "rgba(17,24,39,0.85)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "18px", padding: "24px" } as const;
-const paragraphStyle = { color: "#d1d5db", lineHeight: "1.7", margin: 0 } as const;
-const chipStyle = { backgroundColor: "rgba(139, 92, 246, 0.15)", color: "#d8b4fe", padding: "6px 14px", borderRadius: "20px", fontSize: "14px", border: "1px solid rgba(139, 92, 246, 0.3)" } as const;
-const purpleButtonStyle = { backgroundColor: "#8b5cf6", color: "white", border: "none", borderRadius: "10px", padding: "12px 16px", fontWeight: "600", cursor: "pointer" } as const;
-const secondaryButtonStyle = { backgroundColor: "transparent", color: "#a78bfa", border: "1px solid #8b5cf6", borderRadius: "10px", padding: "10px 20px", fontWeight: "600", cursor: "pointer" } as const;
-const navStyle = { display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" } as const;
-const profileStyle = { borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "16px", color: "#9ca3af", fontSize: "13px" } as const;
-const emptyCardStyle = { maxWidth: "420px", margin: "120px auto", backgroundColor: "rgba(17,24,39,0.85)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "18px", padding: "32px", textAlign: "center" } as const;
-
-// NEW: Frosted Glass Overlay Design Layout Tokens
-const modalOverlayBlurStyle = {
-  position: "fixed" as const,
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: "rgba(3, 3, 3, 0.6)", // Transparent dark shroud layer
-  backdropFilter: "blur(12px)", // Premium background frosted glass effect
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 1000,
-  padding: "24px"
-};
-
-const modalCardStyle = {
-  width: "100%",
-  maxWidth: "460px",
-  backgroundColor: "#09090b",
-  border: "1px solid rgba(255, 255, 255, 0.08)",
-  borderRadius: "20px",
-  padding: "40px 32px",
-  textAlign: "center" as const,
-  boxShadow: "0 30px 60px rgba(0, 0, 0, 0.5)"
-};
-
-const modalIconCircleStyle = {
-  width: "56px",
-  height: "56px",
-  borderRadius: "50%",
-  backgroundColor: "rgba(139, 92, 246, 0.15)",
-  border: "1px solid rgba(139, 92, 246, 0.3)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: "24px",
-  margin: "0 auto 20px auto"
-};
-
-const scoreMetricBoxStyle = {
-  backgroundColor: "rgba(255, 255, 255, 0.02)",
-  border: "1px solid rgba(255, 255, 255, 0.04)",
-  borderRadius: "14px",
-  padding: "24px",
-  marginBottom: "32px"
-};
+const pageStyle = { minHeight: "100vh", display: "flex", backgroundColor: "#ffffff", fontFamily: "'Inter', sans-serif" } as const;
+const sidebarStyle = { width: "260px", backgroundColor: "#fafafa", borderRight: "1px solid #e5e7eb", padding: "24px", zIndex: 10 } as const;
+const mainStyle = { flex: 1, padding: "48px 64px", overflowY: "auto", backgroundColor: "#ffffff" } as const;
+const primaryButtonStyle = { width: "100%", backgroundColor: "#2563eb", color: "white", border: "none", borderRadius: "8px", padding: "12px 16px", fontWeight: "600", cursor: "pointer", boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)" } as const;
+const cardStyle = { padding: "24px", backgroundColor: "#ffffff", borderRadius: "12px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)" };
