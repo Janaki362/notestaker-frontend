@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { onAuthStateChanged } from "firebase/auth";
@@ -9,24 +9,29 @@ import { auth, db } from "../firebase";
 
 const FlashcardItem = ({ card, idx }: { card: any, idx: number }) => {
   const [isFlipped, setIsFlipped] = useState(false);
+  
+  // Bulletproof text extraction for flashcards
+  const questionText = card.question || card.front || card.term || card.title || `Flashcard ${idx + 1}`;
+  const answerText = card.answer || card.back || card.definition || card.description || "No answer provided.";
+
   return (
     <div onClick={() => setIsFlipped(!isFlipped)} style={{ perspective: "1000px", height: "260px", cursor: "pointer" }}>
       <div style={{ position: "relative", width: "100%", height: "100%", textAlign: "center", transition: "transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1)", transformStyle: "preserve-3d", transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
         <div style={{ position: "absolute", width: "100%", height: "100%", backfaceVisibility: "hidden", backgroundColor: "#ffffff", border: "1px solid #e5e7eb", borderRadius: "12px", padding: "32px 24px", display: "flex", flexDirection: "column", justifyContent: "center", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05)" }}>
           <p style={{ fontWeight: "700", color: "#2563eb", marginBottom: "16px", fontSize: "14px" }}>Flashcard {idx + 1}</p>
-          <h3 style={{ fontSize: "18px", margin: "0 0 16px 0", color: "#111827", lineHeight: "1.5" }}>{card.question || card.front}</h3>
+          <h3 style={{ fontSize: "18px", margin: "0 0 16px 0", color: "#111827", lineHeight: "1.5" }}>{questionText}</h3>
           <p style={{ marginTop: "auto", fontSize: "13px", color: "#9ca3af", fontWeight: "500" }}>Click to flip ↺</p>
         </div>
         <div style={{ position: "absolute", width: "100%", height: "100%", backfaceVisibility: "hidden", backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "12px", padding: "32px 24px", display: "flex", flexDirection: "column", justifyContent: "center", transform: "rotateY(180deg)", boxShadow: "0 10px 15px -3px rgba(37, 99, 235, 0.1)" }}>
           <p style={{ fontWeight: "700", color: "#2563eb", marginBottom: "16px", fontSize: "14px" }}>Answer</p>
-          <div style={{ color: "#1e3a8a", fontSize: "16px", lineHeight: "1.6", fontWeight: "500", overflowY: "auto" }}>{card.answer || card.back}</div>
+          <div style={{ color: "#1e3a8a", fontSize: "16px", lineHeight: "1.6", fontWeight: "500", overflowY: "auto" }}>{answerText}</div>
         </div>
       </div>
     </div>
   );
 };
 
-export default function ResultsPage() {
+function ResultsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const dbId = searchParams.get("id");
@@ -43,7 +48,7 @@ export default function ResultsPage() {
   const [isQuizSubmitted, setIsQuizSubmitted] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
 
-  const [messages, setMessages] = useState<{ sender: "user" | "ai"; text: any }>([{ 
+  const [messages, setMessages] = useState<{ sender: "user" | "ai"; text: any }[]>([{ 
     sender: "ai", 
     text: (
       <div>
@@ -86,7 +91,7 @@ export default function ResultsPage() {
 
     const loadData = async () => {
       setLoading(true);
-      let dataToRender = null;
+      let dataToRender: any = null;
       if (dbId && dbId !== "undefined") {
         try {
           const docRef = doc(db, "studySets", dbId);
@@ -140,30 +145,36 @@ export default function ResultsPage() {
     if (!results) return null;
 
     if (activeTab === "summary") {
+      const summaryText = results.summary || results.text || results.content || "No summary available.";
       return (
         <div style={cardStyle}>
           <h2 style={{ fontSize: "20px", fontWeight: "700", marginBottom: "16px" }}>Summary</h2>
-          <p style={{ lineHeight: "1.7", color: "#374151" }}>{results.summary || "No summary available."}</p>
+          <p style={{ lineHeight: "1.7", color: "#374151" }}>{summaryText}</p>
         </div>
       );
     }
 
     if (activeTab === "keyConcepts") {
-      const concepts = results.keyConcepts || [];
+      const concepts = results.keyConcepts || results.concepts || [];
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {concepts.length > 0 ? concepts.map((concept: any, idx: number) => (
-            <div key={idx} style={cardStyle}>
-              <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>{concept.term || concept.title}</h3>
-              <p style={{ margin: 0, color: "#4b5563", lineHeight: "1.6" }}>{concept.definition || concept.description}</p>
-            </div>
-          )) : <div style={cardStyle}>No key concepts extracted.</div>}
+          {concepts.length > 0 ? concepts.map((concept: any, idx: number) => {
+            const title = concept.term || concept.title || concept.name || concept.topic || `Concept ${idx + 1}`;
+            const description = concept.definition || concept.description || concept.content || concept.summary || (typeof concept === 'string' ? concept : JSON.stringify(concept));
+
+            return (
+              <div key={idx} style={cardStyle}>
+                <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>{title}</h3>
+                <p style={{ margin: 0, color: "#4b5563", lineHeight: "1.6" }}>{description}</p>
+              </div>
+            );
+          }) : <div style={cardStyle}>No key concepts extracted.</div>}
         </div>
       );
     }
 
     if (activeTab === "flashcards") {
-      const cards = results.flashcards || [];
+      const cards = results.flashcards || results.cards || [];
       return (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
           {cards.length > 0 ? cards.map((card: any, idx: number) => <FlashcardItem key={idx} card={card} idx={idx} />) : <div style={cardStyle}>No flashcards generated.</div>}
@@ -172,35 +183,40 @@ export default function ResultsPage() {
     }
 
     if (activeTab === "quiz") {
-      const questions = results.quiz || [];
+      const questions = results.quiz || results.questions || [];
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {questions.length > 0 ? questions.map((q: any, idx: number) => (
-            <div key={idx} style={cardStyle}>
-              <p style={{ fontWeight: "700", color: "#111827", marginBottom: "16px", fontSize: "16px" }}>{idx + 1}. {q.question}</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {(q.options || []).map((opt: string, oIdx: number) => {
-                  const isSelected = quizAnswers[idx] === opt;
-                  let bgColor = isSelected ? "#eff6ff" : "#f9fafb";
-                  let borderColor = isSelected ? "#2563eb" : "#e5e7eb";
-                  let textColor = isSelected ? "#1d4ed8" : "#374151";
+          {questions.length > 0 ? questions.map((q: any, idx: number) => {
+            const questionText = q.question || q.title || `Question ${idx + 1}`;
+            const optionsArray = Array.isArray(q.options) ? q.options : (Array.isArray(q.choices) ? q.choices : []);
 
-                  if (isQuizSubmitted) {
-                    const isCorrect = q.answer === opt || q.correctAnswer === opt;
-                    if (isCorrect) { bgColor = "#ecfdf5"; borderColor = "#10b981"; textColor = "#065f46"; } 
-                    else if (isSelected && !isCorrect) { bgColor = "#fef2f2"; borderColor = "#ef4444"; textColor = "#991b1b"; }
-                  }
-                  return (
-                    <div key={oIdx} onClick={() => handleOptionSelect(idx, opt)}
-                      style={{ padding: "14px 16px", border: `2px solid ${borderColor}`, borderRadius: "10px", backgroundColor: bgColor, color: textColor, cursor: isQuizSubmitted ? "default" : "pointer", fontWeight: isSelected ? "600" : "500", transition: "all 0.2s" }}
-                    >
-                      {opt}
-                    </div>
-                  );
-                })}
+            return (
+              <div key={idx} style={cardStyle}>
+                <p style={{ fontWeight: "700", color: "#111827", marginBottom: "16px", fontSize: "16px" }}>{idx + 1}. {questionText}</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {optionsArray.map((opt: string, oIdx: number) => {
+                    const isSelected = quizAnswers[idx] === opt;
+                    let bgColor = isSelected ? "#eff6ff" : "#f9fafb";
+                    let borderColor = isSelected ? "#2563eb" : "#e5e7eb";
+                    let textColor = isSelected ? "#1d4ed8" : "#374151";
+
+                    if (isQuizSubmitted) {
+                      const isCorrect = q.answer === opt || q.correctAnswer === opt;
+                      if (isCorrect) { bgColor = "#ecfdf5"; borderColor = "#10b981"; textColor = "#065f46"; } 
+                      else if (isSelected && !isCorrect) { bgColor = "#fef2f2"; borderColor = "#ef4444"; textColor = "#991b1b"; }
+                    }
+                    return (
+                      <div key={oIdx} onClick={() => handleOptionSelect(idx, opt)}
+                        style={{ padding: "14px 16px", border: `2px solid ${borderColor}`, borderRadius: "10px", backgroundColor: bgColor, color: textColor, cursor: isQuizSubmitted ? "default" : "pointer", fontWeight: isSelected ? "600" : "500", transition: "all 0.2s" }}
+                      >
+                        {opt}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )) : <div style={cardStyle}>No quiz questions generated.</div>}
+            );
+          }) : <div style={cardStyle}>No quiz questions generated.</div>}
         </div>
       );
     }
@@ -209,13 +225,14 @@ export default function ResultsPage() {
 
   if (loading) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading your notes...</div>;
 
-  const totalQuestions = results?.quiz?.length || 0;
+  const quizData = results?.quiz || results?.questions || [];
+  const totalQuestions = quizData.length;
   const answeredQuestions = Object.keys(quizAnswers).length;
   const progressPercentage = totalQuestions === 0 ? 0 : Math.round((answeredQuestions / totalQuestions) * 100);
 
   let score = 0;
   if (isQuizSubmitted && totalQuestions > 0) {
-    results.quiz.forEach((q: any, idx: number) => {
+    quizData.forEach((q: any, idx: number) => {
       if (quizAnswers[idx] === q.answer || quizAnswers[idx] === q.correctAnswer) score++;
     });
   }
@@ -334,7 +351,6 @@ export default function ResultsPage() {
         <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(17, 24, 39, 0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
           <div style={{ position: "relative", backgroundColor: "#ffffff", color: "#111827", borderRadius: "24px", padding: "40px", width: "100%", maxWidth: "420px", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)", border: "1px solid #e5e7eb" }}>
             
-            {/* Close X Button */}
             <button onClick={() => setShowScoreModal(false)} style={{ position: "absolute", top: "20px", right: "20px", background: "none", border: "none", color: "#9ca3af", fontSize: "20px", cursor: "pointer", padding: "4px" }}>✕</button>
 
             <div style={{ fontSize: "40px", marginBottom: "16px", display: "inline-flex", padding: "16px", backgroundColor: "#eff6ff", borderRadius: "50%", border: "1px solid #bfdbfe" }}>🎓</div>
@@ -342,7 +358,6 @@ export default function ResultsPage() {
             <h2 style={{ fontSize: "28px", fontWeight: "800", marginBottom: "8px", color: "#111827" }}>Quiz Completed!</h2>
             <p style={{ color: "#6b7280", fontSize: "15px", marginBottom: "32px", lineHeight: "1.5" }}>Great effort! Here is your performance breakdown.</p>
 
-            {/* Score Display Box */}
             <div style={{ backgroundColor: "#f9fafb", borderRadius: "16px", padding: "32px 20px", marginBottom: "32px", border: "1px solid #e5e7eb" }}>
               <p style={{ color: "#2563eb", fontSize: "12px", fontWeight: "700", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "12px" }}>Total Accuracy</p>
               <div style={{ fontSize: "48px", fontWeight: "800", display: "flex", alignItems: "baseline", justifyContent: "center", gap: "8px", color: "#111827" }}>
@@ -351,21 +366,16 @@ export default function ResultsPage() {
               <p style={{ color: "#4b5563", fontSize: "14px", marginTop: "12px", fontWeight: "500" }}>Percentage Score: {scorePercentage}%</p>
             </div>
 
-            {/* Action Buttons */}
             <div style={{ display: "flex", gap: "12px" }}>
               <button 
                 onClick={() => { setIsQuizSubmitted(false); setQuizAnswers({}); setShowScoreModal(false); }} 
                 style={{ flex: 1, padding: "14px", borderRadius: "12px", backgroundColor: "#ffffff", border: "1px solid #d1d5db", color: "#374151", fontWeight: "600", cursor: "pointer", transition: "all 0.2s" }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f3f4f6"}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#ffffff"}
               >
                 ↻ Try Again
               </button>
               <button 
                 onClick={() => router.push("/dashboard")} 
                 style={{ flex: 1, padding: "14px", borderRadius: "12px", backgroundColor: "#2563eb", border: "none", color: "#ffffff", fontWeight: "600", cursor: "pointer", boxShadow: "0 4px 14px 0 rgba(37, 99, 235, 0.3)", transition: "all 0.2s" }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-1px)"}
-                onMouseLeave={(e) => e.currentTarget.style.transform = "none"}
               >
                 Go to Dashboard
               </button>
@@ -378,8 +388,16 @@ export default function ResultsPage() {
           </div>
         </div>
       )}
-
     </main>
+  );
+}
+
+// --- NEW DEFAULT EXPORT WITH SUSPENSE BOUNDARY ---
+export default function ResultsPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>Loading your workspace...</div>}>
+      <ResultsContent />
+    </Suspense>
   );
 }
 
