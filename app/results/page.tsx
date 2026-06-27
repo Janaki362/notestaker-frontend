@@ -10,7 +10,6 @@ import { auth, db } from "../firebase";
 const FlashcardItem = ({ card, idx }: { card: any, idx: number }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   
-  // Bulletproof text extraction for flashcards
   const questionText = card.question || card.front || card.term || card.title || `Flashcard ${idx + 1}`;
   const answerText = card.answer || card.back || card.definition || card.description || "No answer provided.";
 
@@ -27,6 +26,35 @@ const FlashcardItem = ({ card, idx }: { card: any, idx: number }) => {
           <div style={{ color: "#1e3a8a", fontSize: "16px", lineHeight: "1.6", fontWeight: "500", overflowY: "auto" }}>{answerText}</div>
         </div>
       </div>
+    </div>
+  );
+};
+
+// --- NEW: Bulletproof generic list renderer for all mode data ---
+const renderGenericList = (list: any[], emptyMessage: string) => {
+  if (!list || list.length === 0) return <div style={cardStyle}>{emptyMessage}</div>;
+  
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {list.map((item: any, idx: number) => {
+        if (typeof item === 'string') {
+          return (
+            <div key={idx} style={cardStyle}>
+              <p style={{ margin: 0, color: "#4b5563", lineHeight: "1.6" }}>{item}</p>
+            </div>
+          );
+        }
+        
+        const title = item.title || item.name || item.term || item.party || item.clause || item.metric || item.action || `Item ${idx + 1}`;
+        const description = item.description || item.definition || item.detail || item.summary || item.value || item.obligation || JSON.stringify(item);
+        
+        return (
+          <div key={idx} style={cardStyle}>
+            <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>{title}</h3>
+            <p style={{ margin: 0, color: "#4b5563", lineHeight: "1.6" }}>{description}</p>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -56,8 +84,8 @@ function ResultsContent() {
         <p style={{ margin: "0 0 8px 0", fontWeight: "600", color: "#374151" }}>Try asking:</p>
         <ul style={{ margin: 0, paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "6px", color: "#4b5563" }}>
           <li>Summarize the main topics</li>
-          <li>Generate study tips</li>
-          <li>Explain Zero Trust Architecture</li>
+          <li>Extract the key risks</li>
+          <li>Explain the complex clauses</li>
         </ul>
       </div>
     )
@@ -141,6 +169,46 @@ function ResultsContent() {
     setQuizAnswers(prev => ({ ...prev, [questionIndex]: option }));
   };
 
+  // --- NEW: Dynamic Tab Routing based on Mode ---
+  const getTabsForMode = (mode?: string) => {
+    const normalizedMode = (mode || "student").toLowerCase();
+    switch(normalizedMode) {
+      case "legal":
+        return [
+          { id: "summary", label: "Summary" },
+          { id: "keyClauses", label: "Key Clauses" },
+          { id: "parties", label: "Parties" },
+          { id: "obligations", label: "Obligations & Rights" },
+          { id: "risks", label: "Risks" },
+          { id: "importantDates", label: "Important Dates" }
+        ];
+      case "medical":
+        return [
+          { id: "summary", label: "Summary" },
+          { id: "diagnoses", label: "Diagnoses" },
+          { id: "medications", label: "Medications" },
+          { id: "treatments", label: "Treatments" },
+          { id: "recommendations", label: "Recommendations" }
+        ];
+      case "business":
+        return [
+          { id: "summary", label: "Summary" },
+          { id: "actionItems", label: "Action Items" },
+          { id: "keyMetrics", label: "Key Metrics" },
+          { id: "decisions", label: "Decisions" },
+          { id: "risks", label: "Risks" }
+        ];
+      default: // student mode
+        return [
+          { id: "summary", label: "Summary" },
+          { id: "keyConcepts", label: "Key Concepts" },
+          { id: "definitions", label: "Definitions" },
+          { id: "flashcards", label: "Flashcards" },
+          { id: "quiz", label: "Practice Quiz" }
+        ];
+    }
+  };
+
   const renderTabContent = () => {
     if (!results) return null;
 
@@ -154,77 +222,98 @@ function ResultsContent() {
       );
     }
 
-    if (activeTab === "keyConcepts") {
-      const concepts = results.keyConcepts || results.concepts || [];
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {concepts.length > 0 ? concepts.map((concept: any, idx: number) => {
-            const title = concept.term || concept.title || concept.name || concept.topic || `Concept ${idx + 1}`;
-            const description = concept.definition || concept.description || concept.content || concept.summary || (typeof concept === 'string' ? concept : JSON.stringify(concept));
+    // Dynamic rendering mapping
+    switch (activeTab) {
+      // Student Tabs
+      case "keyConcepts": return renderGenericList(results.keyConcepts || results.concepts, "No key concepts found.");
+      case "definitions": return renderGenericList(results.definitions, "No definitions found.");
+      
+      // Legal Tabs
+      case "keyClauses": return renderGenericList(results.keyClauses || results.clauses, "No key clauses found.");
+      case "parties": return renderGenericList(results.parties, "No parties found.");
+      case "obligations": return renderGenericList(results.obligations || results.obligationsAndRights, "No obligations or rights found.");
+      case "importantDates": return renderGenericList(results.importantDates || results.dates, "No important dates found.");
+      
+      // Medical Tabs
+      case "diagnoses": return renderGenericList(results.diagnoses, "No diagnoses found.");
+      case "medications": return renderGenericList(results.medications, "No medications found.");
+      case "treatments": return renderGenericList(results.treatments, "No treatments found.");
+      case "recommendations": return renderGenericList(results.recommendations, "No recommendations found.");
 
-            return (
-              <div key={idx} style={cardStyle}>
-                <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0" }}>{title}</h3>
-                <p style={{ margin: 0, color: "#4b5563", lineHeight: "1.6" }}>{description}</p>
-              </div>
-            );
-          }) : <div style={cardStyle}>No key concepts extracted.</div>}
-        </div>
-      );
-    }
+      // Business Tabs
+      case "actionItems": return renderGenericList(results.actionItems, "No action items found.");
+      case "keyMetrics": return renderGenericList(results.keyMetrics || results.metrics, "No key metrics found.");
+      case "decisions": return renderGenericList(results.decisions, "No decisions found.");
+      
+      // Shared Risk Tab (Legal & Business)
+      case "risks": return renderGenericList(results.risks, "No risks found.");
 
-    if (activeTab === "flashcards") {
-      const cards = results.flashcards || results.cards || [];
-      return (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
-          {cards.length > 0 ? cards.map((card: any, idx: number) => <FlashcardItem key={idx} card={card} idx={idx} />) : <div style={cardStyle}>No flashcards generated.</div>}
-        </div>
-      );
-    }
+      // Interactive Tabs (Student Mode)
+      case "flashcards":
+        const cards = results.flashcards || results.cards || [];
+        return (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+            {cards.length > 0 ? cards.map((card: any, idx: number) => <FlashcardItem key={idx} card={card} idx={idx} />) : <div style={cardStyle}>No flashcards generated.</div>}
+          </div>
+        );
+      
+      case "quiz":
+        const questions = results.quiz || results.questions || [];
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            {questions.length > 0 ? questions.map((q: any, idx: number) => {
+              const questionText = q.question || q.title || `Question ${idx + 1}`;
+              const optionsArray = Array.isArray(q.options) ? q.options : (Array.isArray(q.choices) ? q.choices : []);
 
-    if (activeTab === "quiz") {
-      const questions = results.quiz || results.questions || [];
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {questions.length > 0 ? questions.map((q: any, idx: number) => {
-            const questionText = q.question || q.title || `Question ${idx + 1}`;
-            const optionsArray = Array.isArray(q.options) ? q.options : (Array.isArray(q.choices) ? q.choices : []);
+              return (
+                <div key={idx} style={cardStyle}>
+                  <p style={{ fontWeight: "700", color: "#111827", marginBottom: "16px", fontSize: "16px" }}>{idx + 1}. {questionText}</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    {optionsArray.map((opt: string, oIdx: number) => {
+                      const isSelected = quizAnswers[idx] === opt;
+                      let bgColor = isSelected ? "#eff6ff" : "#f9fafb";
+                      let borderColor = isSelected ? "#2563eb" : "#e5e7eb";
+                      let textColor = isSelected ? "#1d4ed8" : "#374151";
 
-            return (
-              <div key={idx} style={cardStyle}>
-                <p style={{ fontWeight: "700", color: "#111827", marginBottom: "16px", fontSize: "16px" }}>{idx + 1}. {questionText}</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {optionsArray.map((opt: string, oIdx: number) => {
-                    const isSelected = quizAnswers[idx] === opt;
-                    let bgColor = isSelected ? "#eff6ff" : "#f9fafb";
-                    let borderColor = isSelected ? "#2563eb" : "#e5e7eb";
-                    let textColor = isSelected ? "#1d4ed8" : "#374151";
-
-                    if (isQuizSubmitted) {
-                      const isCorrect = q.answer === opt || q.correctAnswer === opt;
-                      if (isCorrect) { bgColor = "#ecfdf5"; borderColor = "#10b981"; textColor = "#065f46"; } 
-                      else if (isSelected && !isCorrect) { bgColor = "#fef2f2"; borderColor = "#ef4444"; textColor = "#991b1b"; }
-                    }
-                    return (
-                      <div key={oIdx} onClick={() => handleOptionSelect(idx, opt)}
-                        style={{ padding: "14px 16px", border: `2px solid ${borderColor}`, borderRadius: "10px", backgroundColor: bgColor, color: textColor, cursor: isQuizSubmitted ? "default" : "pointer", fontWeight: isSelected ? "600" : "500", transition: "all 0.2s" }}
-                      >
-                        {opt}
-                      </div>
-                    );
-                  })}
+                      if (isQuizSubmitted) {
+                        const isCorrect = q.answer === opt || q.correctAnswer === opt;
+                        if (isCorrect) { bgColor = "#ecfdf5"; borderColor = "#10b981"; textColor = "#065f46"; } 
+                        else if (isSelected && !isCorrect) { bgColor = "#fef2f2"; borderColor = "#ef4444"; textColor = "#991b1b"; }
+                      }
+                      return (
+                        <div key={oIdx} onClick={() => handleOptionSelect(idx, opt)}
+                          style={{ padding: "14px 16px", border: `2px solid ${borderColor}`, borderRadius: "10px", backgroundColor: bgColor, color: textColor, cursor: isQuizSubmitted ? "default" : "pointer", fontWeight: isSelected ? "600" : "500", transition: "all 0.2s" }}
+                        >
+                          {opt}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            );
-          }) : <div style={cardStyle}>No quiz questions generated.</div>}
-        </div>
-      );
+              );
+            }) : <div style={cardStyle}>No quiz questions generated.</div>}
+          </div>
+        );
+      default: return null;
     }
-    return null;
   };
 
-  if (loading) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading your notes...</div>;
+  if (loading) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>Loading your workspace...</div>;
 
+  // Configuration Variables
+  const currentMode = (results?.mode || "student").toLowerCase();
+  const displayMode = currentMode.charAt(0).toUpperCase() + currentMode.slice(1) + " Mode";
+  const tabs = getTabsForMode(currentMode);
+  
+  const getModeColor = (mode?: string) => {
+    if (mode === "legal") return { bg: "#fef2f2", text: "#dc2626" };
+    if (mode === "medical") return { bg: "#ecfeff", text: "#0891b2" };
+    if (mode === "business") return { bg: "#f0fdf4", text: "#16a34a" };
+    return { bg: "#eff6ff", text: "#2563eb" };
+  };
+  const modeColor = getModeColor(currentMode);
+
+  // Quiz Math
   const quizData = results?.quiz || results?.questions || [];
   const totalQuestions = quizData.length;
   const answeredQuestions = Object.keys(quizAnswers).length;
@@ -236,7 +325,6 @@ function ResultsContent() {
       if (quizAnswers[idx] === q.answer || quizAnswers[idx] === q.correctAnswer) score++;
     });
   }
-  
   const scorePercentage = totalQuestions === 0 ? 0 : Math.round((score / totalQuestions) * 100);
 
   return (
@@ -246,7 +334,7 @@ function ResultsContent() {
           <h2 style={{ margin: "0 0 24px", fontSize: "18px", color: "#111827", fontWeight: "700" }}>
             <span style={{ color: "#2563eb", marginRight: "6px" }}>✦</span>NotesTaker AI
           </h2>
-          <Link href="/upload" style={{ textDecoration: "none" }}><button style={primaryButtonStyle}>+ New Study Set</button></Link>
+          <Link href="/upload" style={{ textDecoration: "none" }}><button style={primaryButtonStyle}>+ New Upload</button></Link>
           <nav style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "12px" }}>
             {[{ name: "Dashboard", path: "/dashboard", icon: "▦" }, { name: "Folders", path: "/folders", icon: "📁" }, { name: "Settings", path: "/settings", icon: "⚙" }].map((item) => (
               <Link key={item.name} href={item.path} style={{ textDecoration: "none" }}>
@@ -268,7 +356,12 @@ function ResultsContent() {
         <div style={{ marginBottom: "32px" }}>
           <h1 style={{ fontSize: "32px", margin: "0 0 8px 0", color: "#111827", fontWeight: "800" }}>{fileName}</h1>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "#6b7280", fontSize: "14px", fontWeight: "500", marginTop: "12px" }}>
-            <span style={{ backgroundColor: "#eff6ff", color: "#2563eb", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "700" }}>Student Mode</span>
+            
+            {/* NEW: Dynamic Mode Badge */}
+            <span style={{ backgroundColor: modeColor.bg, color: modeColor.text, padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "700" }}>
+              {displayMode}
+            </span>
+            
             <span style={{ backgroundColor: "#f3f4f6", color: "#4b5563", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "700" }}>Vertex AI</span>
             <span style={{ backgroundColor: "#ecfdf5", color: "#059669", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: "700" }}>⚡ Cached</span>
             <span style={{ marginLeft: "4px" }}>• Processed Successfully</span>
@@ -278,7 +371,9 @@ function ResultsContent() {
         <div style={{ display: "flex", gap: "32px", alignItems: "flex-start" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", gap: "24px", borderBottom: "1px solid #e5e7eb", marginBottom: "32px" }}>
-              {[{ id: "summary", label: "Summary" }, { id: "keyConcepts", label: "Key Concepts" }, { id: "flashcards", label: "Flashcards" }, { id: "quiz", label: "Practice Quiz" }].map((tab) => (
+              
+              {/* NEW: Dynamic Tabs Mapper */}
+              {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
@@ -287,6 +382,7 @@ function ResultsContent() {
                   {tab.label}
                 </button>
               ))}
+              
             </div>
             <div>{renderTabContent()}</div>
           </div>
@@ -334,7 +430,7 @@ function ResultsContent() {
                     <div style={{ padding: "10px 16px", borderRadius: msg.sender === "user" ? "16px 16px 0px 16px" : "16px 16px 16px 0px", backgroundColor: msg.sender === "user" ? "#2563eb" : "#f3f4f6", color: msg.sender === "user" ? "#ffffff" : "#1f2937", maxWidth: "85%", fontSize: "14px", lineHeight: "1.5", border: msg.sender === "ai" ? "1px solid #e5e7eb" : "none" }}>{msg.text}</div>
                   </div>
                 ))}
-                {isChatLoading && <div style={{ display: "flex", justifyContent: "flex-start" }}><div style={{ padding: "10px 16px", borderRadius: "16px 16px 16px 0px", backgroundColor: "#f3f4f6", color: "#6b7280", fontStyle: "italic", fontSize: "14px", border: "1px solid #e5e7eb" }}>AI is thinking...</div></div>}
+                {isChatLoading && <div style={{ display: "flex", justifyContent: "flex-start" }}><div style={{ padding: "10px 16px", borderRadius: "16px 16px 16px 0px", backgroundColor: "#f3f4f6", color: "#6b7280", fontStyle: "italic", fontSize: "14px", border: "1px solid #e5e7eb" }}>AI is analyzing the workspace...</div></div>}
                 <div ref={messagesEndRef} />
               </div>
               <form onSubmit={handleSendMessage} style={{ display: "flex", padding: "16px", borderTop: "1px solid #e5e7eb", backgroundColor: "#fafafa", gap: "12px", borderRadius: "0 0 16px 16px" }}>
@@ -392,7 +488,6 @@ function ResultsContent() {
   );
 }
 
-// --- NEW DEFAULT EXPORT WITH SUSPENSE BOUNDARY ---
 export default function ResultsPage() {
   return (
     <Suspense fallback={<div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>Loading your workspace...</div>}>

@@ -19,6 +19,7 @@ export default function UploadPage() {
   const [error, setError] = useState("");
   const [userName, setUserName] = useState("User");
   const [user, setUser] = useState<any>(null); // Added user state to save to db
+  const [selectedMode, setSelectedMode] = useState("Student");
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -73,7 +74,7 @@ export default function UploadPage() {
 
     const formData = new FormData();
     formData.append("file", selectedFile);
-    formData.append("mode", mode);
+    formData.append("mode", selectedMode.toLowerCase());
 
     try {
       // Call the production Cloud Run URL
@@ -142,13 +143,16 @@ export default function UploadPage() {
 
           <div style={{ marginBottom: "24px", textAlign: "left" }}>
             <label style={{ display: "block", marginBottom: "8px", fontWeight: "600", fontSize: "14px" }}>Select Study Mode</label>
-            <select value={mode} onChange={(e) => setMode(e.target.value as any)} style={{ width: "100%", padding: "12px", borderRadius: "8px", border: "1px solid #d1d5db", cursor: "pointer", fontSize: "14px", outline: "none", transition: "border-color 0.2s" }} onFocus={(e) => e.target.style.borderColor = "#2563eb"} onBlur={(e) => e.target.style.borderColor = "#d1d5db"}>
-              <option value="student">Student</option>
-              <option value="legal">Legal</option>
-              <option value="medical">Medical</option>
-              <option value="business">Business</option>
-            </select>
-          </div>
+<select 
+  className="border border-gray-300 rounded-md p-2 ..."
+  value={selectedMode} 
+  onChange={(e) => setSelectedMode(e.target.value)}
+>
+  <option value="Student">Student Mode</option>
+  <option value="Legal">Legal Mode</option>
+  <option value="Medical">Medical Mode</option>
+  <option value="Business">Business Mode</option>
+</select>          </div>
 
           <div
             onDragOver={(e) => e.preventDefault()}
